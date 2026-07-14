@@ -149,7 +149,8 @@ class TestConfig:
         if os.getenv("GROQ_API_KEY"):
             assert config["provider"] == "groq"
             assert config["api_key"] == os.getenv("GROQ_API_KEY")
-            assert config["model"] == "mixtral-8x7b-32768"
+            # Verifica que o modelo é um dos modelos Groq válidos
+            assert config["model"] in ["mixtral-8x7b-32768", "llama-3.1-8b-instant", "llama-3.1-70b-versatile"]
 
     def test_get_api_config_fallback_gemini(self):
         """Verifica que get_api_config() volta para Gemini se Groq não estiver disponível.

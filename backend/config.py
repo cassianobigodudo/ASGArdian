@@ -32,7 +32,7 @@ def get_api_config() -> dict:
         return {
             "provider": "groq",
             "api_key": groq_key,
-            "model": "mixtral-8x7b-32768",  # Modelo rápido do Groq
+            "model": "llama-3.1-8b-instant",  # Modelo rápido e estável do Groq
         }
     else:
         return {

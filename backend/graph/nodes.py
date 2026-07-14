@@ -52,20 +52,28 @@ def _invoke_llm(prompt: str) -> str:
     Unifica a interface para ambos os provedores.
     """
     if PROVIDER == "groq":
-        client = Groq(api_key=API_KEY)
-        message = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model=MODEL,
-            temperature=0.7,
-        )
-        return message.choices[0].message.content
+        try:
+            client = Groq(api_key=API_KEY)
+            message = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=MODEL,
+                temperature=0.7,
+            )
+            return message.choices[0].message.content
+        except Exception as e:
+            logger.error("Erro ao usar Groq: %s", e)
+            raise APIConnectionError(f"Falha ao invocar Groq: {e}") from e
     else:
-        llm = ChatGoogleGenerativeAI(
-            model=MODEL,
-            google_api_key=API_KEY,
-        )
-        response = llm.invoke([HumanMessage(content=prompt)])
-        return response.content if hasattr(response, "content") else str(response)
+        try:
+            llm = ChatGoogleGenerativeAI(
+                model=MODEL,
+                google_api_key=API_KEY,
+            )
+            response = llm.invoke([HumanMessage(content=prompt)])
+            return response.content if hasattr(response, "content") else str(response)
+        except Exception as e:
+            logger.error("Erro ao usar Gemini: %s", e)
+            raise APIConnectionError(f"Falha ao invocar Gemini: {e}") from e
 
 
 # ---------------------------------------------------------------------------
