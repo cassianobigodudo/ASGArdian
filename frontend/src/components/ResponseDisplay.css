@@ -1,0 +1,96 @@
+.response-display {
+  background: rgba(20, 30, 50, 0.8);
+  border: 1px solid #2ecc71;
+  border-radius: 12px;
+  padding: 2rem;
+  backdrop-filter: blur(10px);
+  animation: slideIn 0.5s ease-out;
+}
+
+.response-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+.response-header h3 {
+  font-size: 1.5rem;
+  color: #2ecc71;
+  margin: 0 0 0.5rem 0;
+}
+
+.response-context {
+  color: #95a5a6;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.button-copy {
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid #2ecc71;
+  color: #2ecc71;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+
+.button-copy:hover {
+  background: rgba(46, 204, 113, 0.2);
+  transform: translateY(-2px);
+}
+
+.response-content {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 1.5rem;
+  border-radius: 8px;
+  border-left: 4px solid #3498db;
+  margin-bottom: 1.5rem;
+  line-height: 1.8;
+  font-size: 1rem;
+  color: #ecf0f1;
+}
+
+.response-content p {
+  margin: 0.5rem 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.response-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.spoiler-badge {
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid #2ecc71;
+  color: #2ecc71;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .response-display {
+    padding: 1.5rem;
+  }
+
+  .response-header {
+    flex-direction: column;
+  }
+
+  .button-copy {
+    align-self: flex-start;
+  }
+
+  .response-content {
+    padding: 1rem;
+    font-size: 0.95rem;
+  }
+}

@@ -1,0 +1,156 @@
+.node-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 2px solid #34495e;
+  transition: all 0.3s;
+  cursor: default;
+}
+
+.node-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+}
+
+.node-icon {
+  font-size: 1.5rem;
+}
+
+.node-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.node-info h4 {
+  font-size: 0.95rem;
+  margin: 0;
+  color: #ecf0f1;
+}
+
+.node-info p {
+  font-size: 0.8rem;
+  color: #95a5a6;
+  margin: 0;
+}
+
+.node-status-indicator {
+  font-size: 1.2rem;
+  min-width: 30px;
+  text-align: center;
+}
+
+/* Status Pending */
+.node-pending {
+  border-color: #95a5a6;
+  background: rgba(95, 158, 160, 0.05);
+}
+
+.node-pending .node-icon {
+  opacity: 0.5;
+}
+
+/* Status Running */
+.node-running {
+  border-color: #3498db;
+  background: rgba(52, 152, 219, 0.1);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.node-running .node-info h4 {
+  color: #3498db;
+}
+
+.node-running .node-status-indicator {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(52, 152, 219, 0);
+  }
+}
+
+/* Status Success */
+.node-success {
+  border-color: #2ecc71;
+  background: rgba(46, 204, 113, 0.1);
+}
+
+.node-success .node-info h4 {
+  color: #2ecc71;
+}
+
+.node-success .node-status-indicator {
+  animation: bounceIn 0.5s ease-out;
+}
+
+@keyframes bounceIn {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Status Error */
+.node-error {
+  border-color: #e74c3c;
+  background: rgba(231, 76, 60, 0.1);
+}
+
+.node-error .node-info h4 {
+  color: #e74c3c;
+}
+
+.node-error .node-status-indicator {
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+@media (max-width: 768px) {
+  .node-status {
+    padding: 0.75rem;
+  }
+
+  .node-info h4 {
+    font-size: 0.9rem;
+  }
+
+  .node-info p {
+    display: none;
+  }
+
+  .node-icon {
+    font-size: 1.25rem;
+  }
+}

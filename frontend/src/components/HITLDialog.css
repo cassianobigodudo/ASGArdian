@@ -1,0 +1,165 @@
+.hitl-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hitl-dialog {
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+  border: 2px solid #f39c12;
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.4s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.hitl-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #f39c12;
+}
+
+.hitl-header h2 {
+  font-size: 1.5rem;
+  color: #f39c12;
+  margin: 0;
+}
+
+.hitl-content {
+  margin-bottom: 2rem;
+}
+
+.hitl-message {
+  color: #ecf0f1;
+  font-size: 1rem;
+  line-height: 1.6;
+  margin: 0 0 1.5rem 0;
+}
+
+.hitl-item-box {
+  background: rgba(243, 156, 18, 0.1);
+  border: 1px solid #f39c12;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hitl-item-box strong {
+  color: #f39c12;
+  font-size: 0.9rem;
+}
+
+.hitl-item-box span {
+  color: #ecf0f1;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.hitl-question {
+  color: #bdc3c7;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.hitl-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.button-no,
+.button-yes {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.button-no {
+  background: rgba(231, 76, 60, 0.1);
+  border: 2px solid #e74c3c;
+  color: #e74c3c;
+}
+
+.button-no:hover {
+  background: rgba(231, 76, 60, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(231, 76, 60, 0.2);
+}
+
+.button-yes {
+  background: linear-gradient(90deg, #2ecc71, #27ae60);
+  color: white;
+}
+
+.button-yes:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(46, 204, 113, 0.3);
+}
+
+.hitl-note {
+  display: block;
+  text-align: center;
+  color: #95a5a6;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .hitl-dialog {
+    padding: 1.5rem;
+    max-width: 90%;
+  }
+
+  .hitl-header h2 {
+    font-size: 1.3rem;
+  }
+
+  .hitl-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .button-no,
+  .button-yes {
+    width: 100%;
+  }
+}
