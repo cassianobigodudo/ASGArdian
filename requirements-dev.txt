@@ -1,0 +1,14 @@
+# ASGArdian — Dependências de Desenvolvimento (mínimas para rodar)
+# Este arquivo contém apenas as dependências essenciais para desenvolvimento e testes.
+# Para produção com todas as integrações, use requirements.txt
+
+# Core LangGraph + LangChain + Gemini
+langgraph==1.2.8
+langchain-core==1.4.8
+langchain-google-genai==4.2.7
+
+# Gerenciamento de Ambiente
+python-dotenv==1.0.1
+
+# Testes
+pytest==9.1.1
