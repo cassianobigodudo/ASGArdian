@@ -13,9 +13,21 @@ Cada prompt é versionado no formato `vX.Y` onde:
 
 ---
 
+## Visão Geral dos Nós (5 nós)
+
+| Nó | Responsabilidade |
+|---|---|
+| `fetch_guide_node` | Busca detonados em tempo real. Reutilizado na 2ª passagem com `current_issue` atualizado para o item faltante |
+| `process_guide_node` | Extrai pré-requisitos, passo a passo e spoilers futuros do resultado bruto |
+| `verify_requirements_node` | Compara inventário com requisitos. Ignorado quando `is_item_search=True` |
+| `generate_help_node` | Gera hint ou answer. Funciona para o problema original e para a busca do item faltante |
+| `critique_spoiler_node` | Audita a resposta contra spoilers futuros. Aplicado em ambos os fluxos |
+
+---
+
 ## 1. `fetch_guide_node` — Busca de Detonado em Tempo Real
 
-**Objetivo:** Instruir o Gemini a usar a ferramenta Google Search para encontrar guias e detonados relevantes ao contexto do jogador, retornando o conteúdo bruto sem nenhuma filtragem.
+**Objetivo:** Instruir o Gemini a usar a ferramenta Google Search para encontrar guias e detonados relevantes. Na primeira passagem, busca o problema original do jogador. Na segunda passagem (`is_item_search=True`), busca especificamente como obter o item faltante.
 
 ### v1.0 (inicial)
 
@@ -25,7 +37,7 @@ Você é um assistente de busca especializado em detonados de videogames.
 Dado o seguinte contexto de jogo:
 - Jogo: {game_name}
 - Missão/Localização: {mission_name}
-- Problema do jogador: {current_issue}
+- Problema/Objetivo atual: {current_issue}
 
 Use a ferramenta de busca do Google para encontrar guias, detonados ou walkthroughs
 que abordem especificamente este ponto do jogo. Retorne o conteúdo bruto encontrado,
@@ -34,11 +46,13 @@ incluindo qualquer informação de pré-requisitos, itens necessários e passos 
 Não filtre nem resuma o conteúdo. Retorne tudo que encontrar para análise posterior.
 ```
 
+> **Nota de uso:** Quando `is_item_search=True`, o campo `current_issue` já chega atualizado com o valor `"como obter [missing_item] em [game_name]"`. O prompt permanece o mesmo — a mudança de contexto é feita no estado, não no prompt.
+
 ---
 
 ## 2. `process_guide_node` — Processamento e Extração Estruturada
 
-**Objetivo:** Analisar o conteúdo bruto do detonado e extrair de forma estruturada: pré-requisitos necessários, o passo a passo da solução e identificar informações que seriam spoilers futuros.
+**Objetivo:** Analisar o conteúdo bruto do detonado e extrair pré-requisitos, passo a passo e spoilers futuros. Funciona tanto para o problema original quanto para a busca do item faltante.
 
 ### v1.0 (inicial)
 
@@ -53,8 +67,7 @@ Analise o seguinte conteúdo bruto de detonado:
 
 Contexto atual do jogador:
 - Jogo: {game_name}
-- Missão/Localização: {mission_name}
-- Problema: {current_issue}
+- Objetivo atual: {current_issue}
 
 Extraia e retorne OBRIGATORIAMENTE no seguinte formato estruturado:
 
@@ -70,7 +83,7 @@ deve ir para SPOILERS_FUTUROS, não para PASSOS.
 
 ## 3. `verify_requirements_node` — Verificação de Inventário
 
-**Objetivo:** Comparar logicamente os pré-requisitos extraídos com o inventário atual do jogador para identificar itens faltantes.
+**Objetivo:** Comparar logicamente os pré-requisitos extraídos com o inventário atual do jogador para identificar itens faltantes. Este nó só é executado quando `is_item_search=False`.
 
 ### v1.0 (inicial)
 
@@ -94,33 +107,9 @@ Retorne apenas esta linha, sem explicações adicionais.
 
 ---
 
-## 4. `guide_missing_item_node` — Guia para Item Faltante (HITL)
+## 4. `generate_help_node` — Geração da Resposta de Ajuda
 
-**Objetivo:** Após aprovação explícita do usuário via HITL, gerar instruções focadas em como obter o item faltante, sem revelar o que acontece depois de obtê-lo.
-
-### v1.0 (inicial)
-
-```
-Você é um guia de gameplay focado exclusivamente em ajudar o jogador a obter um item específico.
-
-Jogo: {game_name}
-Item que o jogador precisa encontrar: {missing_item}
-Contexto atual: {mission_name} — {current_issue}
-
-Forneça instruções claras e diretas sobre COMO e ONDE encontrar o item "{missing_item}".
-
-REGRAS ABSOLUTAS:
-1. Foque APENAS na localização e obtenção do item. Não mencione para que ele será usado.
-2. Não revele nenhum evento de enredo, cutscene ou acontecimento narrativo associado ao item.
-3. Não mencione o que acontece depois que o jogador obtiver o item.
-4. Se o item for encontrado durante uma missão, descreva apenas a mecânica de obtenção.
-```
-
----
-
-## 5. `generate_help_node` — Geração da Resposta de Ajuda
-
-**Objetivo:** Gerar a resposta final de ajuda no modo escolhido pelo jogador (`hint` ou `answer`), usando apenas informações do cenário atual.
+**Objetivo:** Gerar a resposta final de ajuda no modo escolhido pelo jogador (`hint` ou `answer`). Reutilizado tanto para o problema original quanto para guiar o jogador até o item faltante — neste caso, o `current_issue` já reflete o novo objetivo.
 
 ### v1.0 (inicial) — Modo `hint`
 
@@ -129,8 +118,7 @@ Você é um guia sutil de gameplay. Seu objetivo é ajudar o jogador a pensar, n
 
 Contexto:
 - Jogo: {game_name}
-- Missão/Localização: {mission_name}
-- Problema: {current_issue}
+- Objetivo atual: {current_issue}
 - Passo a passo disponível (NÃO revelar diretamente): {guide_steps}
 
 Gere uma DICA SUTIL que:
@@ -150,8 +138,7 @@ Você é um guia direto de gameplay. Seu objetivo é resolver o problema do joga
 
 Contexto:
 - Jogo: {game_name}
-- Missão/Localização: {mission_name}
-- Problema: {current_issue}
+- Objetivo atual: {current_issue}
 - Passo a passo: {guide_steps}
 
 Gere uma SOLUÇÃO DIRETA que:
@@ -165,9 +152,9 @@ Termine com: "[Nenhum spoiler de enredo foi incluído nesta resposta.]"
 
 ---
 
-## 6. `critique_spoiler_node` — Auditoria Anti-Spoiler
+## 5. `critique_spoiler_node` — Auditoria Anti-Spoiler
 
-**Objetivo:** Atuar como uma camada independente de auditoria que verifica se a resposta gerada vaza qualquer informação futura do enredo.
+**Objetivo:** Atuar como uma camada independente de auditoria que verifica se a resposta gerada vaza qualquer informação futura do enredo. Aplicado tanto na resposta do problema original quanto na resposta sobre o item faltante.
 
 ### v1.0 (inicial)
 
@@ -200,3 +187,4 @@ Seja rigoroso. Em caso de dúvida, marque como FAILED.
 | Data | Nó | Versão | Descrição da mudança |
 |---|---|---|---|
 | 2026-07-14 | Todos | v1.0 | Criação inicial de todos os prompts base |
+| 2026-07-14 | Arquitetura | — | Removido `guide_missing_item_node`. Fluxo de busca do item faltante agora reutiliza `fetch_guide_node` e `process_guide_node` via flag `is_item_search` no estado |
