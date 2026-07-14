@@ -13,12 +13,18 @@ Nós implementados:
 """
 
 import re
+import logging
 from typing import Any, Dict
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
 from backend.config import GOOGLE_API_KEY
+from backend.errors import (
+    APIConnectionError,
+    EmptySearchResultError,
+    GuideProcessingError,
+)
 from backend.graph.state import AgentState
 from backend.prompts.templates import (
     FETCH_GUIDE_PROMPT,
@@ -28,6 +34,12 @@ from backend.prompts.templates import (
     GENERATE_ANSWER_PROMPT,
     CRITIQUE_SPOILER_PROMPT,
 )
+
+# ---------------------------------------------------------------------------
+# Logger do modulo
+# ---------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Instância compartilhada do modelo Gemini com Google Search habilitado
@@ -71,8 +83,21 @@ def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     )
 
     llm = _get_llm_with_search()
-    response = llm.invoke([HumanMessage(content=prompt)])
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+    except Exception as exc:
+        logger.error("fetch_guide_node: falha na chamada ao Gemini: %s", exc)
+        raise APIConnectionError(
+            f"Falha ao buscar detonado na web. Verifique sua GOOGLE_API_KEY e conexao. Detalhe: {exc}"
+        ) from exc
+
     raw_result = response.content if hasattr(response, "content") else str(response)
+
+    if not raw_result or not raw_result.strip():
+        raise EmptySearchResultError(
+            f"A busca para '{state['current_issue']}' em '{state['game_name']}' "
+            "nao retornou nenhum conteudo. Tente reformular o problema."
+        )
 
     return {"raw_search_result": raw_result}
 
@@ -99,8 +124,16 @@ def process_guide_node(state: AgentState) -> Dict[str, Any]:
     )
 
     llm = _get_llm()
-    response = llm.invoke([HumanMessage(content=prompt)])
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+    except Exception as exc:
+        logger.error("process_guide_node: falha na chamada ao Gemini: %s", exc)
+        raise APIConnectionError(f"Falha ao processar o guia. Detalhe: {exc}") from exc
+
     content = response.content if hasattr(response, "content") else str(response)
+
+    if not content or not content.strip():
+        raise GuideProcessingError("O modelo retornou resposta vazia ao processar o guia.")
 
     # Extrai PREREQUISITOS
     req_match = re.search(r"PREREQUISITOS:\s*(.+?)(?:\n|$)", content, re.IGNORECASE)
@@ -159,7 +192,12 @@ def verify_requirements_node(state: AgentState) -> Dict[str, Any]:
     )
 
     llm = _get_llm()
-    response = llm.invoke([HumanMessage(content=prompt)])
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+    except Exception as exc:
+        logger.error("verify_requirements_node: falha na chamada ao Gemini: %s", exc)
+        raise APIConnectionError(f"Falha ao verificar requisitos. Detalhe: {exc}") from exc
+
     content = response.content if hasattr(response, "content") else str(response)
 
     # Extrai o MISSING_ITEM da resposta
@@ -212,8 +250,16 @@ def generate_help_node(state: AgentState) -> Dict[str, Any]:
     )
 
     llm = _get_llm()
-    response = llm.invoke([HumanMessage(content=prompt)])
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+    except Exception as exc:
+        logger.error("generate_help_node: falha na chamada ao Gemini: %s", exc)
+        raise APIConnectionError(f"Falha ao gerar resposta de ajuda. Detalhe: {exc}") from exc
+
     generated = response.content if hasattr(response, "content") else str(response)
+
+    if not generated or not generated.strip():
+        raise GuideProcessingError("O modelo retornou resposta vazia ao gerar a ajuda.")
 
     return {"generated_text": generated}
 
@@ -249,7 +295,12 @@ def critique_spoiler_node(state: AgentState) -> Dict[str, Any]:
     )
 
     llm = _get_llm()
-    response = llm.invoke([HumanMessage(content=prompt)])
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+    except Exception as exc:
+        logger.error("critique_spoiler_node: falha na chamada ao Gemini: %s", exc)
+        raise APIConnectionError(f"Falha ao auditar resposta. Detalhe: {exc}") from exc
+
     content = response.content if hasattr(response, "content") else str(response)
 
     passed = "CRITIQUE_RESULT: PASSED" in content.upper()
