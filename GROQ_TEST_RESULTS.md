@@ -28,7 +28,7 @@ API: Groq Cloud (https://console.groq.com)
 ```
 ✅ PROVIDER detectado: groq
 ✅ MODEL: llama-3.1-8b-instant  
-✅ API_KEY: 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
+✅ API_KEY: [configurada corretamente]
 ```
 
 **2️⃣ Teste Simples de LLM**
