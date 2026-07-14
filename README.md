@@ -23,7 +23,7 @@ O coração da aplicação é um **StateGraph** do LangGraph com **5 nós** e ro
 [INPUT]
    │
    ▼
-fetch_guide_node          → Gemini busca detonados em tempo real (Google Search nativa)
+fetch_guide_node          → Groq/Gemini busca detonados em tempo real
    │                         Na 2ª passagem: busca "como obter [missing_item]"
    ▼
 process_guide_node        → Extrai pré-requisitos, passo a passo e spoilers futuros
@@ -56,11 +56,12 @@ verify_requirements_node  → Compara inventário com requisitos
 
 | Componente | Tecnologia |
 |---|---|
-| Linguagem | Python 3.10+ |
+| Linguagem | Python 3.12+ |
 | Orquestração | LangGraph (StateGraph) |
-| LLM | Gemini 1.5 Flash |
+| LLM Primário | **Groq** (Mixtral 8x7B) — Recomendado ⭐ |
+| LLM Fallback | Gemini 2.0 Flash (fallback automático) |
 | Busca Real-Time | Google Search (ferramenta nativa Gemini) |
-| Framework LLM | LangChain + LangChain-Google-GenAI |
+| Framework LLM | LangChain + Groq SDK + LangChain-Google-GenAI |
 | Persistência HITL | LangGraph MemorySaver |
 | Env Management | python-dotenv |
 
@@ -104,10 +105,26 @@ cp .env.example .env
 Edite o `.env`:
 
 ```env
+# Groq API (RECOMENDADO - Melhor performance e quota generosa)
+GROQ_API_KEY=sua_chave_do_groq_aqui
+
+# Google API (Gemini) - Fallback automático se Groq não estiver configurado
 GOOGLE_API_KEY=sua_chave_do_gemini_aqui
 ```
 
-> 🔑 Obtenha sua chave em: [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+#### Obter Chaves de API
+
+**Groq** (Recomendado):
+- Vá em https://console.groq.com/keys
+- Crie uma nova chave de API
+- Cole em `GROQ_API_KEY`
+
+**Google Gemini** (Fallback):
+- Vá em https://aistudio.google.com/app/apikey
+- Crie uma nova chave de API
+- Cole em `GOOGLE_API_KEY`
+
+> 💡 **Nota**: O sistema prioriza Groq se ambas as chaves estiverem presentes. Use Groq para melhor performance.
 
 ---
 
