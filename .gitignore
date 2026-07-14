@@ -141,3 +141,12 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Ambiente Virtual
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Configurações e Chaves Sensíveis
+.env
