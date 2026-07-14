@@ -22,6 +22,7 @@ from backend.main import (
     _is_paused_for_hitl,
     run_agent,
 )
+from backend.errors import PayloadValidationError, APIConnectionError, ASGArdianError
 
 
 # ---------------------------------------------------------------------------
@@ -51,10 +52,10 @@ class TestValidatePayload:
         validate_payload(valid_payload())  # nao deve lancar
 
     def test_campo_ausente_lanca_value_error(self):
-        """Payload sem campo obrigatorio deve lancar ValueError."""
+        """Payload sem campo obrigatorio deve lancar PayloadValidationError."""
         payload = valid_payload()
         del payload["game_name"]
-        with pytest.raises(ValueError, match="game_name"):
+        with pytest.raises(PayloadValidationError, match="game_name"):
             validate_payload(payload)
 
     def test_todos_campos_obrigatorios_validados(self):
@@ -63,22 +64,22 @@ class TestValidatePayload:
         for campo in campos:
             payload = valid_payload()
             del payload[campo]
-            with pytest.raises(ValueError, match=campo):
+            with pytest.raises(PayloadValidationError, match=campo):
                 validate_payload(payload)
 
     def test_campo_none_lanca_value_error(self):
-        """Campo com valor None deve lancar ValueError."""
-        with pytest.raises(ValueError, match="game_name"):
+        """Campo com valor None deve lancar PayloadValidationError."""
+        with pytest.raises(PayloadValidationError, match="game_name"):
             validate_payload(valid_payload(game_name=None))
 
     def test_game_name_vazio_lanca_value_error(self):
-        """game_name vazio (string em branco) deve lancar ValueError."""
-        with pytest.raises(ValueError, match="game_name"):
+        """game_name vazio (string em branco) deve lancar PayloadValidationError."""
+        with pytest.raises(PayloadValidationError, match="game_name"):
             validate_payload(valid_payload(game_name="   "))
 
     def test_help_type_invalido_lanca_value_error(self):
-        """help_type fora de 'hint'/'answer' deve lancar ValueError."""
-        with pytest.raises(ValueError, match="help_type"):
+        """help_type fora de 'hint'/'answer' deve lancar PayloadValidationError."""
+        with pytest.raises(PayloadValidationError, match="help_type"):
             validate_payload(valid_payload(help_type="spoiler"))
 
     def test_help_type_hint_valido(self):
@@ -90,8 +91,8 @@ class TestValidatePayload:
         validate_payload(valid_payload(help_type="answer"))
 
     def test_player_inventory_nao_lista_lanca_value_error(self):
-        """player_inventory como string deve lancar ValueError."""
-        with pytest.raises(ValueError, match="player_inventory"):
+        """player_inventory como string deve lancar PayloadValidationError."""
+        with pytest.raises(PayloadValidationError, match="player_inventory"):
             validate_payload(valid_payload(player_inventory="Shotgun"))
 
     def test_player_inventory_lista_vazia_valida(self):
@@ -215,7 +216,7 @@ class TestRunAgent:
 
     def test_validate_payload_chamado_antes_do_grafo(self):
         """Payload invalido deve falhar antes de qualquer chamada ao grafo."""
-        with pytest.raises(ValueError, match="help_type"):
+        with pytest.raises(PayloadValidationError, match="help_type"):
             run_agent(valid_payload(help_type="invalido"))
 
     @patch("backend.main.app")
