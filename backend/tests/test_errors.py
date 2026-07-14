@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-test_errors.py -- Testes das excecoes customizadas e tratamento de erros dos nos.
+test_errors.py -- Testes das exceções customizadas e tratamento de erros dos nós.
 
 Cobertura:
-- Hierarquia de excecoes (heranca de ASGArdianError)
+- Hierarquia de exceções (herança de ASGArdianError)
 - fetch_guide_node: APIConnectionError em falha de API, EmptySearchResultError em resultado vazio
 - process_guide_node: APIConnectionError em falha de API, GuideProcessingError em resposta vazia
 - verify_requirements_node: APIConnectionError em falha de API
@@ -15,7 +15,7 @@ Cobertura:
 import sys
 import os
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -45,11 +45,11 @@ def make_state(**overrides) -> AgentState:
     base = AgentState(
         game_name="Borderlands 2",
         mission_name="Lights Out",
-        current_issue="Nao consigo restaurar a energia.",
-        original_issue="Nao consigo restaurar a energia.",
+        current_issue="Não consigo restaurar a energia.",
+        original_issue="Não consigo restaurar a energia.",
         help_type="hint",
         player_inventory=["Shotgun Torque"],
-        raw_search_result="conteudo bruto\n\n---SPOILERS_FUTUROS---\nnenhum",
+        raw_search_result="conteúdo bruto\n\n---SPOILERS_FUTUROS---\nnenhum",
         required_requirements=["Item X"],
         missing_item=None,
         is_item_search=False,
@@ -63,13 +63,13 @@ def make_state(**overrides) -> AgentState:
 
 
 # ---------------------------------------------------------------------------
-# Testes da hierarquia de excecoes
+# Testes da hierarquia de exceções
 # ---------------------------------------------------------------------------
 
 class TestErrorHierarchy:
 
     def test_todas_excecoes_herdam_de_asgardian_error(self):
-        """Todas as excecoes customizadas devem herdar de ASGArdianError."""
+        """Todas as exceções customizadas devem herdar de ASGArdianError."""
         assert issubclass(PayloadValidationError, ASGArdianError)
         assert issubclass(APIConnectionError, ASGArdianError)
         assert issubclass(EmptySearchResultError, ASGArdianError)
@@ -77,11 +77,11 @@ class TestErrorHierarchy:
         assert issubclass(SpoilerCritiqueError, ASGArdianError)
 
     def test_todas_excecoes_herdam_de_exception(self):
-        """ASGArdianError deve herdar de Exception (capturavel normalmente)."""
+        """ASGArdianError deve herdar de Exception (capturável normalmente)."""
         assert issubclass(ASGArdianError, Exception)
 
     def test_excecoes_podem_ser_instanciadas_com_mensagem(self):
-        """Todas as excecoes devem aceitar mensagem de texto."""
+        """Todas as exceções devem aceitar mensagem de texto."""
         for cls in [PayloadValidationError, APIConnectionError,
                     EmptySearchResultError, GuideProcessingError, SpoilerCritiqueError]:
             exc = cls("mensagem de teste")
@@ -94,42 +94,34 @@ class TestErrorHierarchy:
 
 class TestFetchGuideNodeErrors:
 
-    @patch("backend.graph.nodes._get_llm_with_search")
-    def test_api_exception_lanca_api_connection_error(self, mock_get_llm):
-        """Excecao da API deve ser convertida em APIConnectionError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("Connection refused")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_api_exception_lanca_api_connection_error(self, mock_invoke_llm):
+        """Exceção da API deve ser convertida em APIConnectionError."""
+        mock_invoke_llm.side_effect = Exception("Connection refused")
 
         with pytest.raises(APIConnectionError, match="Falha ao buscar detonado"):
             fetch_guide_node(make_state())
 
-    @patch("backend.graph.nodes._get_llm_with_search")
-    def test_resultado_vazio_lanca_empty_search_error(self, mock_get_llm):
-        """Resultado vazio da API deve lancar EmptySearchResultError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = MagicMock(content="")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_resultado_vazio_lanca_empty_search_error(self, mock_invoke_llm):
+        """Resultado vazio da API deve lançar EmptySearchResultError."""
+        mock_invoke_llm.return_value = ""
 
         with pytest.raises(EmptySearchResultError, match="nao retornou nenhum conteudo"):
             fetch_guide_node(make_state())
 
-    @patch("backend.graph.nodes._get_llm_with_search")
-    def test_resultado_apenas_espacos_lanca_empty_search_error(self, mock_get_llm):
-        """Resultado com apenas espacos em branco deve lancar EmptySearchResultError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = MagicMock(content="   \n\t  ")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_resultado_apenas_espacos_lanca_empty_search_error(self, mock_invoke_llm):
+        """Resultado com apenas espaços em branco deve lançar EmptySearchResultError."""
+        mock_invoke_llm.return_value = "   \n\t  "
 
         with pytest.raises(EmptySearchResultError):
             fetch_guide_node(make_state())
 
-    @patch("backend.graph.nodes._get_llm_with_search")
-    def test_api_connection_error_e_asgardian_error(self, mock_get_llm):
-        """APIConnectionError deve ser capturavel como ASGArdianError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("timeout")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_api_connection_error_e_asgardian_error(self, mock_invoke_llm):
+        """APIConnectionError deve ser capturável como ASGArdianError."""
+        mock_invoke_llm.side_effect = Exception("timeout")
 
         with pytest.raises(ASGArdianError):
             fetch_guide_node(make_state())
@@ -141,22 +133,18 @@ class TestFetchGuideNodeErrors:
 
 class TestProcessGuideNodeErrors:
 
-    @patch("backend.graph.nodes._get_llm")
-    def test_api_exception_lanca_api_connection_error(self, mock_get_llm):
-        """Excecao da API deve ser convertida em APIConnectionError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("rate limit")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_api_exception_lanca_api_connection_error(self, mock_invoke_llm):
+        """Exceção da API deve ser convertida em APIConnectionError."""
+        mock_invoke_llm.side_effect = Exception("rate limit")
 
         with pytest.raises(APIConnectionError, match="Falha ao processar o guia"):
             process_guide_node(make_state())
 
-    @patch("backend.graph.nodes._get_llm")
-    def test_resposta_vazia_lanca_guide_processing_error(self, mock_get_llm):
-        """Resposta vazia do modelo deve lancar GuideProcessingError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = MagicMock(content="")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_resposta_vazia_lanca_guide_processing_error(self, mock_invoke_llm):
+        """Resposta vazia do modelo deve lançar GuideProcessingError."""
+        mock_invoke_llm.return_value = ""
 
         with pytest.raises(GuideProcessingError, match="resposta vazia"):
             process_guide_node(make_state())
@@ -168,18 +156,16 @@ class TestProcessGuideNodeErrors:
 
 class TestVerifyRequirementsNodeErrors:
 
-    @patch("backend.graph.nodes._get_llm")
-    def test_api_exception_lanca_api_connection_error(self, mock_get_llm):
-        """Excecao da API deve ser convertida em APIConnectionError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("503 Service Unavailable")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_api_exception_lanca_api_connection_error(self, mock_invoke_llm):
+        """Exceção da API deve ser convertida em APIConnectionError."""
+        mock_invoke_llm.side_effect = Exception("503 Service Unavailable")
 
         with pytest.raises(APIConnectionError, match="Falha ao verificar requisitos"):
             verify_requirements_node(make_state(is_item_search=False))
 
     def test_is_item_search_true_nao_chama_api(self):
-        """Quando is_item_search=True, nenhuma excecao deve ser lancada (sem chamada de API)."""
+        """Quando is_item_search=True, nenhuma exceção deve ser lançada (sem chamada de API)."""
         result = verify_requirements_node(make_state(is_item_search=True))
         assert result["missing_item"] is None
 
@@ -190,22 +176,18 @@ class TestVerifyRequirementsNodeErrors:
 
 class TestGenerateHelpNodeErrors:
 
-    @patch("backend.graph.nodes._get_llm")
-    def test_api_exception_lanca_api_connection_error(self, mock_get_llm):
-        """Excecao da API deve ser convertida em APIConnectionError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("API key invalid")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_api_exception_lanca_api_connection_error(self, mock_invoke_llm):
+        """Exceção da API deve ser convertida em APIConnectionError."""
+        mock_invoke_llm.side_effect = Exception("API key invalid")
 
         with pytest.raises(APIConnectionError, match="Falha ao gerar resposta"):
             generate_help_node(make_state())
 
-    @patch("backend.graph.nodes._get_llm")
-    def test_resposta_vazia_lanca_guide_processing_error(self, mock_get_llm):
-        """Resposta vazia deve lancar GuideProcessingError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = MagicMock(content="")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_resposta_vazia_lanca_guide_processing_error(self, mock_invoke_llm):
+        """Resposta vazia deve lançar GuideProcessingError."""
+        mock_invoke_llm.return_value = ""
 
         with pytest.raises(GuideProcessingError, match="resposta vazia"):
             generate_help_node(make_state())
@@ -217,22 +199,20 @@ class TestGenerateHelpNodeErrors:
 
 class TestCritiqueSpoilerNodeErrors:
 
-    @patch("backend.graph.nodes._get_llm")
-    def test_api_exception_lanca_api_connection_error(self, mock_get_llm):
-        """Excecao da API no critique deve ser convertida em APIConnectionError."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("quota exceeded")
-        mock_get_llm.return_value = mock_llm
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_api_exception_lanca_api_connection_error(self, mock_invoke_llm):
+        """Exceção da API no critique deve ser convertida em APIConnectionError."""
+        mock_invoke_llm.side_effect = Exception("quota exceeded")
 
         state = make_state(
             raw_search_result="guia\n\n---SPOILERS_FUTUROS---\nO chefe morre no final.",
-            generated_text="Resposta com possivel spoiler.",
+            generated_text="Resposta com possível spoiler.",
         )
         with pytest.raises(APIConnectionError, match="Falha ao auditar"):
             critique_spoiler_node(state)
 
     def test_sem_spoilers_nao_chama_api(self):
-        """Sem spoilers futuros nao deve chamar a API (aprovacao automatica)."""
+        """Sem spoilers futuros não deve chamar a API (aprovação automática)."""
         state = make_state(
             raw_search_result="guia\n\n---SPOILERS_FUTUROS---\nnenhum",
             generated_text="Resposta limpa.",

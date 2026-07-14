@@ -5,7 +5,7 @@ Cada função recebe o AgentState completo e retorna um dicionário
 com apenas os campos que foram modificados naquele nó.
 
 Nós implementados:
-1. fetch_guide_node      — busca detonados via Gemini + Google Search
+1. fetch_guide_node      — busca detonados via Groq (ou Gemini)
 2. process_guide_node    — extrai requisitos, passos e spoilers do resultado bruto
 3. verify_requirements_node — compara inventário com requisitos (ignora se is_item_search=True)
 4. generate_help_node    — gera hint ou answer com base no help_type
@@ -18,8 +18,9 @@ from typing import Any, Dict
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
+from groq import Groq
 
-from backend.config import GOOGLE_API_KEY
+from backend.config import PROVIDER, API_KEY, MODEL
 from backend.errors import (
     APIConnectionError,
     EmptySearchResultError,
@@ -42,24 +43,29 @@ from backend.prompts.templates import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Instância compartilhada do modelo Gemini com Google Search habilitado
+# Factory de LLM baseado no provedor configurado
 # ---------------------------------------------------------------------------
 
-def _get_llm_with_search() -> ChatGoogleGenerativeAI:
-    """Retorna instância do Gemini 1.5 Flash com ferramenta Google Search nativa."""
-    return ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        google_api_key=GOOGLE_API_KEY,
-        tools="google_search_retrieval",
-    )
-
-
-def _get_llm() -> ChatGoogleGenerativeAI:
-    """Retorna instância do Gemini 1.5 Flash sem ferramentas (para processamento puro)."""
-    return ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        google_api_key=GOOGLE_API_KEY,
-    )
+def _invoke_llm(prompt: str) -> str:
+    """
+    Invoca o LLM (Groq ou Gemini) e retorna a resposta em texto.
+    Unifica a interface para ambos os provedores.
+    """
+    if PROVIDER == "groq":
+        client = Groq(api_key=API_KEY)
+        message = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model=MODEL,
+            temperature=0.7,
+        )
+        return message.choices[0].message.content
+    else:
+        llm = ChatGoogleGenerativeAI(
+            model=MODEL,
+            google_api_key=API_KEY,
+        )
+        response = llm.invoke([HumanMessage(content=prompt)])
+        return response.content if hasattr(response, "content") else str(response)
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +74,7 @@ def _get_llm() -> ChatGoogleGenerativeAI:
 
 def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     """
-    Usa o Gemini com Google Search nativa para buscar detonados em tempo real.
+    Usa o LLM (Groq ou Gemini) para buscar detonados.
 
     Na primeira passagem: busca pelo problema original do jogador.
     Na segunda passagem (is_item_search=True): busca como obter o missing_item.
@@ -82,16 +88,13 @@ def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
         current_issue=state["current_issue"],
     )
 
-    llm = _get_llm_with_search()
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        raw_result = _invoke_llm(prompt)
     except Exception as exc:
-        logger.error("fetch_guide_node: falha na chamada ao Gemini: %s", exc)
+        logger.error("fetch_guide_node: falha na chamada ao LLM: %s", exc)
         raise APIConnectionError(
-            f"Falha ao buscar detonado na web. Verifique sua GOOGLE_API_KEY e conexao. Detalhe: {exc}"
+            f"Falha ao buscar detonado. Verifique sua chave de API e conexao. Detalhe: {exc}"
         ) from exc
-
-    raw_result = response.content if hasattr(response, "content") else str(response)
 
     if not raw_result or not raw_result.strip():
         raise EmptySearchResultError(
@@ -123,14 +126,11 @@ def process_guide_node(state: AgentState) -> Dict[str, Any]:
         current_issue=state["current_issue"],
     )
 
-    llm = _get_llm()
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        content = _invoke_llm(prompt)
     except Exception as exc:
-        logger.error("process_guide_node: falha na chamada ao Gemini: %s", exc)
+        logger.error("process_guide_node: falha na chamada ao LLM: %s", exc)
         raise APIConnectionError(f"Falha ao processar o guia. Detalhe: {exc}") from exc
-
-    content = response.content if hasattr(response, "content") else str(response)
 
     if not content or not content.strip():
         raise GuideProcessingError("O modelo retornou resposta vazia ao processar o guia.")
@@ -191,14 +191,11 @@ def verify_requirements_node(state: AgentState) -> Dict[str, Any]:
         player_inventory=", ".join(state.get("player_inventory", [])),
     )
 
-    llm = _get_llm()
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        content = _invoke_llm(prompt)
     except Exception as exc:
-        logger.error("verify_requirements_node: falha na chamada ao Gemini: %s", exc)
+        logger.error("verify_requirements_node: falha na chamada ao LLM: %s", exc)
         raise APIConnectionError(f"Falha ao verificar requisitos. Detalhe: {exc}") from exc
-
-    content = response.content if hasattr(response, "content") else str(response)
 
     # Extrai o MISSING_ITEM da resposta
     match = re.search(r"MISSING_ITEM:\s*(.+)", content, re.IGNORECASE)
@@ -233,7 +230,7 @@ def generate_help_node(state: AgentState) -> Dict[str, Any]:
     critique_feedback = ""
     if state.get("critique_passed") is False and state.get("generated_text"):
         critique_feedback = (
-            "\n⚠️ ATENÇÃO — A resposta anterior foi REPROVADA por conter spoilers. "
+            "\n⚠️ ATENCAO — A resposta anterior foi REPROVADA por conter spoilers. "
             "Reescreva completamente sem mencionar eventos futuros do enredo."
         )
 
@@ -249,14 +246,11 @@ def generate_help_node(state: AgentState) -> Dict[str, Any]:
         critique_feedback=critique_feedback,
     )
 
-    llm = _get_llm()
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        generated = _invoke_llm(prompt)
     except Exception as exc:
-        logger.error("generate_help_node: falha na chamada ao Gemini: %s", exc)
+        logger.error("generate_help_node: falha na chamada ao LLM: %s", exc)
         raise APIConnectionError(f"Falha ao gerar resposta de ajuda. Detalhe: {exc}") from exc
-
-    generated = response.content if hasattr(response, "content") else str(response)
 
     if not generated or not generated.strip():
         raise GuideProcessingError("O modelo retornou resposta vazia ao gerar a ajuda.")
@@ -294,14 +288,11 @@ def critique_spoiler_node(state: AgentState) -> Dict[str, Any]:
         generated_text=state.get("generated_text", ""),
     )
 
-    llm = _get_llm()
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        content = _invoke_llm(prompt)
     except Exception as exc:
-        logger.error("critique_spoiler_node: falha na chamada ao Gemini: %s", exc)
+        logger.error("critique_spoiler_node: falha na chamada ao LLM: %s", exc)
         raise APIConnectionError(f"Falha ao auditar resposta. Detalhe: {exc}") from exc
-
-    content = response.content if hasattr(response, "content") else str(response)
 
     passed = "CRITIQUE_RESULT: PASSED" in content.upper()
 

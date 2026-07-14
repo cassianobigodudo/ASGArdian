@@ -3,18 +3,18 @@
 test_workflow.py -- Testes de estrutura e roteamento do StateGraph do ASGArdian.
 
 Cobertura:
-- Estrutura do grafo: nos registrados, entry point, arestas
+- Estrutura do grafo: nós registrados, entry point, arestas
 - route_after_process: is_item_search=True/False
-- route_after_verify: sem missing, com missing+sem approval, approval=nao, approval=sim
+- route_after_verify: sem missing, com missing+sem approval, approval=não, approval=sim
 - route_after_critique: critique_passed=True/False
 - compile_app: compila sem erros com MemorySaver
-- Integracao leve: fluxo completo com todos os nos mockados
+- Integração leve: fluxo completo com todos os nós mockados
 """
 
 import sys
 import os
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -38,8 +38,8 @@ def make_state(**overrides) -> AgentState:
     base = AgentState(
         game_name="Borderlands 2",
         mission_name="Lights Out",
-        current_issue="Nao consigo restaurar a energia.",
-        original_issue="Nao consigo restaurar a energia.",
+        current_issue="Não consigo restaurar a energia.",
+        original_issue="Não consigo restaurar a energia.",
         help_type="hint",
         player_inventory=["Shotgun Torque"],
         raw_search_result="",
@@ -56,7 +56,7 @@ def make_state(**overrides) -> AgentState:
 
 
 # ---------------------------------------------------------------------------
-# Testes das funcoes de roteamento
+# Testes das funções de roteamento
 # ---------------------------------------------------------------------------
 
 class TestRouteAfterProcess:
@@ -75,7 +75,7 @@ class TestRouteAfterProcess:
 class TestRouteAfterVerify:
 
     def test_sem_missing_vai_para_generate(self):
-        """Inventario completo: deve avancar direto para generate_help_node."""
+        """Inventário completo: deve avançar direto para generate_help_node."""
         state = make_state(missing_item=None)
         assert route_after_verify(state) == "generate_help_node"
 
@@ -95,7 +95,7 @@ class TestRouteAfterVerify:
         assert route_after_verify(state) == "fetch_guide_node"
 
     def test_missing_approval_nao_encerra_fluxo(self):
-        """RN04: user_approval=nao deve encerrar o fluxo no END."""
+        """RN04: user_approval=não deve encerrar o fluxo no END."""
         state = make_state(missing_item="Chave de Acesso", user_approval="nao")
         assert route_after_verify(state) == END
 
@@ -120,18 +120,18 @@ class TestRouteAfterCritique:
 class TestWorkflowStructure:
 
     def test_build_workflow_retorna_stategraph(self):
-        """build_workflow deve retornar um objeto StateGraph valido."""
+        """build_workflow deve retornar um objeto StateGraph válido."""
         from langgraph.graph import StateGraph
         workflow = build_workflow()
         assert isinstance(workflow, StateGraph)
 
     def test_compile_app_sem_erros(self):
-        """compile_app deve compilar sem lancar excecoes."""
+        """compile_app deve compilar sem lançar exceções."""
         app = compile_app()
         assert app is not None
 
     def test_grafo_tem_5_nos_registrados(self):
-        """O grafo deve ter exatamente os 5 nos definidos no tech.md."""
+        """O grafo deve ter exatamente os 5 nós definidos no tech.md."""
         workflow = build_workflow()
         nos_esperados = {
             "fetch_guide_node",
@@ -140,50 +140,40 @@ class TestWorkflowStructure:
             "generate_help_node",
             "critique_spoiler_node",
         }
-        # Acessa os nos registrados internamente no StateGraph
+        # Acessa os nós registrados internamente no StateGraph
         nos_registrados = set(workflow.nodes.keys())
         assert nos_esperados.issubset(nos_registrados)
 
     def test_entry_point_e_fetch_guide_node(self):
         """O ponto de entrada do grafo deve ser fetch_guide_node."""
         workflow = build_workflow()
-        # O entry point e armazenado como "__start__" apontando para o no inicial
-        compiled = workflow.compile()
-        # Verifica que fetch_guide_node esta no grafo e e acessivel
+        # O entry point é armazenado como "__start__" apontando para o nó inicial
+        # Verifica que fetch_guide_node está no grafo e é acessível
         assert "fetch_guide_node" in workflow.nodes
 
 
 # ---------------------------------------------------------------------------
-# Teste de integracao leve: fluxo completo com mocks
+# Teste de integração leve: fluxo completo com mocks
 # ---------------------------------------------------------------------------
 
 class TestWorkflowIntegration:
 
-    @patch("backend.graph.nodes._get_llm_with_search")
-    @patch("backend.graph.nodes._get_llm")
-    def test_fluxo_completo_sem_missing_item(self, mock_get_llm, mock_get_llm_search):
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_fluxo_completo_sem_missing_item(self, mock_invoke_llm):
         """
-        Integracao: fluxo completo sem item faltando deve produzir final_response.
+        Integração: fluxo completo sem item faltando deve produzir final_response.
         fetch -> process -> verify (sem missing) -> generate -> critique (passed) -> END
         """
-        # Mock do LLM de busca
-        mock_search_llm = MagicMock()
-        mock_search_llm.invoke.return_value = MagicMock(
-            content="Guia completo: va para a esquerda e use a alavanca."
-        )
-        mock_get_llm_search.return_value = mock_search_llm
-
-        # Mock do LLM de processamento (respostas diferentes por chamada)
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = [
+        # Mock do LLM com respostas diferentes por chamada
+        mock_invoke_llm.side_effect = [
+            # fetch_guide_node
+            "Guia completo: vá para a esquerda e use a alavanca.",
             # process_guide_node
-            MagicMock(content="PREREQUISITOS: nenhum\nPASSOS: 1. Va para a esquerda.\nSPOILERS_FUTUROS: nenhum"),
-            # verify_requirements_node (sem requisitos, nao sera chamado)
+            "PREREQUISITOS: nenhum\nPASSOS: 1. Vá para a esquerda.\nSPOILERS_FUTUROS: nenhum",
+            # verify_requirements_node (sem requisitos, não será chamado efetivamente)
             # generate_help_node
-            MagicMock(content="Observe os elementos visuais da sala. [Nenhum spoiler de enredo foi incluido nesta resposta.]"),
-            # critique_spoiler_node (aprovacao automatica pois sem spoilers)
+            "Observe os elementos visuais da sala. [Nenhum spoiler de enredo foi incluído nesta resposta.]",
         ]
-        mock_get_llm.return_value = mock_llm
 
         # Compila grafo sem interrupt (para teste de fluxo completo)
         from langgraph.graph import StateGraph
@@ -198,31 +188,24 @@ class TestWorkflowIntegration:
 
         assert result["final_response"] != "" or result["critique_passed"] is True
 
-    @patch("backend.graph.nodes._get_llm_with_search")
-    @patch("backend.graph.nodes._get_llm")
-    def test_fluxo_hitl_pausa_quando_missing_item(self, mock_get_llm, mock_get_llm_search):
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_fluxo_hitl_pausa_quando_missing_item(self, mock_invoke_llm):
         """
-        Integracao HITL: grafo deve pausar antes do segundo fetch quando missing_item detectado.
+        Integração HITL: grafo deve pausar antes do segundo fetch quando missing_item detectado.
 
-        Mecanica real do interrupt_before=["fetch_guide_node"]:
-        - 1a invocacao (sem checkpointer): roda fetch -> process -> verify -> detecta missing
+        Mecânica real do interrupt_before=["fetch_guide_node"]:
+        - 1ª invocação (sem checkpointer): roda fetch -> process -> verify -> detecta missing
           -> roteador vai para fetch_guide_node -> HITL pausa ANTES do segundo fetch
         - Estado salvo deve conter missing_item preenchido
         """
-        mock_search_llm = MagicMock()
-        mock_search_llm.invoke.return_value = MagicMock(
-            content="Este puzzle requer a Chave de Acesso Perdida."
-        )
-        mock_get_llm_search.return_value = mock_search_llm
-
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = [
+        mock_invoke_llm.side_effect = [
+            # fetch_guide_node (primeira chamada)
+            "Este puzzle requer a Chave de Acesso Perdida.",
             # process_guide_node
-            MagicMock(content="PREREQUISITOS: Chave de Acesso Perdida\nPASSOS: 1. Use a chave.\nSPOILERS_FUTUROS: nenhum"),
+            "PREREQUISITOS: Chave de Acesso Perdida\nPASSOS: 1. Use a chave.\nSPOILERS_FUTUROS: nenhum",
             # verify_requirements_node
-            MagicMock(content="MISSING_ITEM: Chave de Acesso Perdida"),
+            "MISSING_ITEM: Chave de Acesso Perdida",
         ]
-        mock_get_llm.return_value = mock_llm
 
         from langgraph.checkpoint.memory import MemorySaver
         from backend.graph.workflow import build_workflow
@@ -236,14 +219,14 @@ class TestWorkflowIntegration:
         initial_state = make_state(player_inventory=[])
         config = {"configurable": {"thread_id": "test-hitl-pause"}}
 
-        # Primeira execucao completa: fetch -> process -> verify (detecta missing)
-        # Como nao ha interrupt, o roteador tenta ir para fetch de novo
+        # Primeira execução completa: fetch -> process -> verify (detecta missing)
+        # Como não há interrupt, o roteador tenta ir para fetch de novo
         # mas os mocks de LLM acabam e o verify retorna missing_item
-        # O importante e verificar que o estado contem missing_item apos o verify
+        # O importante é verificar que o estado contém missing_item após o verify
         try:
             app_no_interrupt.invoke(initial_state, config=config)
         except Exception:
-            pass  # pode falhar por mock esgotado, o que e esperado
+            pass  # pode falhar por mock esgotado, o que é esperado
 
         snapshot = app_no_interrupt.get_state(config)
         state_values = snapshot.values
@@ -251,24 +234,19 @@ class TestWorkflowIntegration:
         # O verify_requirements_node deve ter populado missing_item
         assert state_values.get("missing_item") == "Chave de Acesso Perdida"
 
-    @patch("backend.graph.nodes._get_llm_with_search")
-    @patch("backend.graph.nodes._get_llm")
-    def test_fluxo_hitl_retomada_com_nao(self, mock_get_llm, mock_get_llm_search):
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_fluxo_hitl_retomada_com_nao(self, mock_invoke_llm):
         """
-        Integracao HITL: user_approval=nao deve encerrar o fluxo no END.
+        Integração HITL: user_approval=não deve encerrar o fluxo no END.
         """
-        mock_search_llm = MagicMock()
-        mock_search_llm.invoke.return_value = MagicMock(
-            content="Requer Chave de Acesso."
-        )
-        mock_get_llm_search.return_value = mock_search_llm
-
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = [
-            MagicMock(content="PREREQUISITOS: Chave de Acesso\nPASSOS: 1. Use a chave.\nSPOILERS_FUTUROS: nenhum"),
-            MagicMock(content="MISSING_ITEM: Chave de Acesso"),
+        mock_invoke_llm.side_effect = [
+            # fetch_guide_node
+            "Requer Chave de Acesso.",
+            # process_guide_node
+            "PREREQUISITOS: Chave de Acesso\nPASSOS: 1. Use a chave.\nSPOILERS_FUTUROS: nenhum",
+            # verify_requirements_node
+            "MISSING_ITEM: Chave de Acesso",
         ]
-        mock_get_llm.return_value = mock_llm
 
         from langgraph.checkpoint.memory import MemorySaver
         from backend.graph.workflow import build_workflow
@@ -282,13 +260,13 @@ class TestWorkflowIntegration:
         initial_state = make_state(player_inventory=[])
         config = {"configurable": {"thread_id": "test-hitl-nao"}}
 
-        # Primeira execucao: pausa no HITL
+        # Primeira execução: pausa no HITL
         app.invoke(initial_state, config=config)
 
-        # Usuario responde "nao" -- atualiza estado e retoma
+        # Usuário responde "não" -- atualiza estado e retoma
         app.update_state(config, {"user_approval": "nao"})
         result = app.invoke(None, config=config)
 
-        # Com user_approval=nao, o roteador deve ter ido para END
+        # Com user_approval=não, o roteador deve ter ido para END
         snapshot = app.get_state(config)
         assert snapshot.values.get("user_approval") == "nao"

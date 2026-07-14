@@ -3,12 +3,35 @@
 ## 1. Stack Tecnológica
 * **Linguagem Principal:** Python 3.10+
 * **Orquestração de Agentes:** LangGraph (StateGraph)
-* **Framework LLM:** LangChain / LangChain-Google-GenAI
-* **Modelo com Busca Real-Time:** `gemini-1.5-flash` com ferramenta nativa `Google Search`
+* **Framework LLM:** LangChain
+* **Provedor de LLM:** Groq (Llama 3.1 70B) - RECOMENDADO
+  * Alternativa: Google Gemini (legado, quota limitada)
+* **Modelo Padrão:** `mixtral-8x7b-32768` (Groq) ou `gemini-2.0-flash` (Gemini)
+* **Busca Web:** Integrada no conhecimento do Llama 3.1 (Groq) ou Google Search nativo (Gemini)
 * **Gerenciamento de Ambiente:** `python-dotenv`
 * **Persistência de Estado (HITL):** LangGraph `MemorySaver`
 
-## 2. Estrutura do Estado (`AgentState`)
+## 2. Suporte Multi-Provedor
+
+O ASGArdian agora suporta múltiplos provedores de LLM:
+
+### Groq (Recomendado) ⭐
+- **Vantagens:**
+  - Muito mais rápido (100+ tokens/segundo)
+  - Quota generosa (quota muito maior que free tier do Gemini)
+  - Modelo poderoso (Llama 3.1 70B ou Mixtral 8x7B)
+  - Temperatura configurável
+- **Configuração:** Adicionar `GROQ_API_KEY` no `.env`
+- **Obter Chave:** https://console.groq.com/keys
+
+### Google Gemini (Legado)
+- **Desvantagens:**
+  - Quota limitada no free tier
+  - Mais lento que Groq
+- **Configuração:** Adicionar `GOOGLE_API_KEY` no `.env`
+- **Fallback:** Usado automaticamente se `GROQ_API_KEY` não estiver configurada
+
+## 3. Estrutura do Estado (`AgentState`)
 Definido via `TypedDict` para tráfego contínuo e persistência entre os nós do grafo.
 
 ```python
@@ -21,7 +44,7 @@ class AgentState(TypedDict):
     original_issue: str          # Preserva o problema original antes de qualquer redirecionamento
     help_type: str                   # "hint" ou "answer"
     player_inventory: List[str]
-    raw_search_result: str           # Conteúdo bruto retornado pelo Gemini via Google Search
+    raw_search_result: str           # Conteúdo bruto retornado pelo LLM
     required_requirements: List[str] # Itens obrigatórios identificados pela LLM
     missing_item: Optional[str]      # Item que falta no inventário do jogador (se houver)
     is_item_search: bool             # Flag que indica se o fluxo atual é uma busca pelo item faltante
@@ -31,10 +54,10 @@ class AgentState(TypedDict):
     final_response: str              # Resposta final validada
 ```
 
-## 3. Topologia do Grafo (LangGraph)
+## 4. Topologia do Grafo (LangGraph)
 
 ### Nós (Nodes):
-1. `fetch_guide_node`: O Gemini ativa a busca nativa do Google em tempo real. Na primeira passagem, pesquisa detonados com base no problema original. Na segunda passagem (quando `is_item_search=True`), pesquisa especificamente como obter o `missing_item`. Salva o resultado em `raw_search_result`.
+1. `fetch_guide_node`: O LLM (Groq ou Gemini) busca informações contextualizadas. Na primeira passagem, pesquisa detonados com base no problema original. Na segunda passagem (quando `is_item_search=True`), pesquisa especificamente como obter o `missing_item`. Salva o resultado em `raw_search_result`.
 2. `process_guide_node`: LLM analisa o texto bruto e extrai de forma estruturada os pré-requisitos, o passo a passo e os potenciais spoilers futuros.
 3. `verify_requirements_node`: Compara logicamente os `required_requirements` com o `player_inventory`. Se o jogador não possuir algo necessário **e** `is_item_search` for `False`, preenche `missing_item`. Se `is_item_search` for `True`, este nó é ignorado pelo roteamento — evitando loop infinito.
 4. `generate_help_node`: LLM gera a pista (modo `hint`) ou a solução detalhada (modo `answer`) baseando-se no cenário atual do estado.

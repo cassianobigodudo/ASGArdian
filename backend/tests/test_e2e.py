@@ -8,7 +8,7 @@ Executa cenários reais com payloads de exemplo para validar o fluxo completo:
 3. Geração de resposta
 4. Tratamento de erros
 
-Nota: Estes testes requerem GOOGLE_API_KEY configurada no .env
+Nota: Estes testes requerem GROQ_API_KEY ou GOOGLE_API_KEY configurada no .env
 para funcionar completamente. Se não estiver configurada, os testes
 mockam as chamadas de API.
 
@@ -21,7 +21,6 @@ import sys
 import os
 import pytest
 from unittest.mock import patch, MagicMock
-from io import StringIO
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -39,13 +38,6 @@ from backend.example_payload import (
 # Fixtures e helpers
 # ---------------------------------------------------------------------------
 
-def mock_llm_response(content: str) -> MagicMock:
-    """Cria um mock de resposta do Gemini."""
-    response = MagicMock()
-    response.content = content
-    return response
-
-
 def mock_fetch_guide_success() -> str:
     """Mock de resposta bem-sucedida do fetch_guide_node."""
     return """
@@ -58,7 +50,7 @@ def mock_fetch_guide_success() -> str:
     4. O cofre se abrirá e você poderá coletar os diamantes
 
     SPOILERS_FUTUROS:
-    Aviso: Após coletar os diamantes, Devin Weston você traicionará.
+    Aviso: Após coletar os diamantes, Devin Weston o traicionará.
     """
 
 
@@ -100,16 +92,6 @@ def mock_generate_answer() -> str:
     5. O cofre se abrirá em 30 segundos
     6. Você terá acesso aos diamantes
     """
-
-
-def mock_critique_passed() -> str:
-    """Mock de crítica que aprova a resposta."""
-    return "CRITIQUE_RESULT: PASSED"
-
-
-def mock_critique_failed() -> str:
-    """Mock de crítica que rejeita a resposta."""
-    return "CRITIQUE_RESULT: FAILED — A resposta contém spoiler sobre a traição."
 
 
 # ---------------------------------------------------------------------------
@@ -260,9 +242,8 @@ class TestE2EGtaV:
 class TestE2EIntegrationLayers:
     """Testes que validam a integração entre as camadas da aplicação."""
 
-    @patch("backend.graph.nodes._get_llm_with_search")
-    @patch("backend.graph.nodes._get_llm")
-    def test_camada_validacao_rejeita_antes_do_grafo(self, mock_get_llm, mock_get_llm_search):
+    @patch("backend.graph.nodes._invoke_llm")
+    def test_camada_validacao_rejeita_antes_do_grafo(self, mock_invoke_llm):
         """
         Verifica que a validação de payload é executada ANTES do grafo.
         Isso garante que erros de entrada são capturados rapidamente.
@@ -275,8 +256,8 @@ class TestE2EIntegrationLayers:
         with pytest.raises(PayloadValidationError):
             run_agent(invalid_payload)
         
-        # O mock do grafo nunca deve ser chamado
-        mock_get_llm_search.assert_not_called()
+        # O mock do LLM nunca deve ser chamado
+        mock_invoke_llm.assert_not_called()
 
     @patch("backend.main.app")
     def test_tratamento_de_erro_api_no_fluxo(self, mock_app):
@@ -315,7 +296,6 @@ class TestE2EDocumentation:
 
     def test_payloads_tem_comentarios(self):
         """Verifica que cada payload tem um comentário explicativo."""
-        import inspect
         from backend.example_payload import (
             payload_gta_v_hint,
             payload_gta_v_answer,

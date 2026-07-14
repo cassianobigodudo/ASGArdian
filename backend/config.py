@@ -1,5 +1,6 @@
 """
 config.py — Carregamento seguro de variáveis de ambiente via python-dotenv.
+Suporta tanto Google Gemini quanto Groq (recomendado).
 Nenhuma credencial deve ser hardcoded neste arquivo.
 """
 
@@ -10,20 +11,44 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def get_google_api_key() -> str:
+def get_api_config() -> dict:
     """
-    Retorna a GOOGLE_API_KEY do ambiente.
-    Lança ValueError em tempo de inicialização se a variável não estiver definida,
-    evitando falhas silenciosas durante a execução do grafo.
+    Retorna configuração de API com chave e provedor.
+    Prioriza Groq se ambas as chaves estiverem disponíveis.
+    Lança ValueError em tempo de inicialização se nenhuma chave for encontrada.
     """
-    key = os.getenv("GOOGLE_API_KEY")
-    if not key:
+    google_key = os.getenv("GOOGLE_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+    
+    if not google_key and not groq_key:
         raise ValueError(
-            "GOOGLE_API_KEY não encontrada. "
-            "Defina a variável no arquivo .env com base no .env.example."
+            "Nenhuma chave de API foi encontrada.\n"
+            "Configure GROQ_API_KEY (recomendado) ou GOOGLE_API_KEY no arquivo .env\n"
+            "Veja .env.example para mais detalhes."
         )
-    return key
+    
+    # Preferência: Groq se disponível (melhor performance e quota)
+    if groq_key:
+        return {
+            "provider": "groq",
+            "api_key": groq_key,
+            "model": "mixtral-8x7b-32768",  # Modelo rápido do Groq
+        }
+    else:
+        return {
+            "provider": "gemini",
+            "api_key": google_key,
+            "model": "gemini-2.0-flash",
+        }
 
 
-# Expõe a chave como constante para uso nos nós do grafo
-GOOGLE_API_KEY: str = get_google_api_key()
+# Configuração centralizada exportada para uso nos nós
+_config = get_api_config()
+
+PROVIDER = _config["provider"]
+API_KEY = _config["api_key"]
+MODEL = _config["model"]
+
+# Compatibilidade com código antigo
+GOOGLE_API_KEY = _config["api_key"] if _config["provider"] == "gemini" else None
+GROQ_API_KEY = _config["api_key"] if _config["provider"] == "groq" else None
