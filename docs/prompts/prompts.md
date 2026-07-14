@@ -147,8 +147,58 @@ Gere uma SOLUÇÃO DIRETA que:
 3. Inclua apenas ações do ponto atual — nada do que acontece depois
 4. NÃO mencione consequências narrativas, cutscenes ou eventos de enredo futuros
 
+{critique_feedback}
+
 Termine com: "[Nenhum spoiler de enredo foi incluído nesta resposta.]"
 ```
+
+---
+
+## Feedback Iterativo do Critique (Reutilização Crítica)
+
+### Como Funciona
+
+Se o `critique_spoiler_node` **rejeita** a resposta (critique_passed=False), o roteador volta o fluxo para `generate_help_node` com um campo adicional `{critique_feedback}` preenchido.
+
+Este feedback instrui o modelo a **reescrever completamente**, alertando-o sobre o spoiler específico detectado.
+
+### Exemplo de Feedback Injetado
+
+```
+⚠️ ATENCAO — A resposta anterior foi REPROVADA por conter spoilers. 
+Reescreva completamente sem mencionar eventos futuros do enredo.
+```
+
+### Fluxo de Refinamento Iterativo
+
+```
+[generate_help_node produz resposta]
+           │
+           ▼
+[critique_spoiler_node audia]
+           │
+           ├─ Aprovado? → final_response + END
+           │
+           └─ Rejeitado? 
+                    │
+                    └─ Injetar {critique_feedback}
+                    │
+                    └─ Retornar para generate_help_node
+                    │
+                    └─ Reescrever sem spoilers
+                    │
+                    └─ Auditar novamente...
+```
+
+### Aplicação em Ambos os Fluxos
+
+Este loop iterativo é aplicado **tanto** à resposta do problema original **quanto** à resposta sobre como obter o item faltante (quando `is_item_search=True`). Isto garante que todas as dicas e soluções passem pelo mesmo nível de rigor anti-spoiler.
+
+### Quando é Usado
+
+- **Primeira resposta**: `critique_feedback` é vazio (primeiro envio)
+- **Resposta rejeitada**: `critique_feedback` é preenchido com aviso e detalhes
+- **Resposta reescrita**: O modelo incorpora o feedback e tenta novamente
 
 ---
 
