@@ -21,10 +21,27 @@ Fluxo principal:
 """
 
 import uuid
+import logging
 from typing import Any, Dict
 
 from backend.graph.workflow import app
 from backend.graph.state import AgentState
+from backend.errors import (
+    ASGArdianError,
+    PayloadValidationError,
+    APIConnectionError,
+    EmptySearchResultError,
+)
+
+# ---------------------------------------------------------------------------
+# Configuracao basica de logging
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -38,30 +55,30 @@ VALID_HELP_TYPES = {"hint", "answer"}
 def validate_payload(data: Dict[str, Any]) -> None:
     """
     Valida os 5 campos obrigatorios do payload de entrada.
-    Lanca ValueError com mensagem clara se algum campo estiver ausente ou invalido.
+    Lanca PayloadValidationError com mensagem clara se algum campo estiver ausente ou invalido.
     """
     for field in REQUIRED_FIELDS:
         if field not in data:
-            raise ValueError(f"Campo obrigatorio ausente no payload: '{field}'")
+            raise PayloadValidationError(f"Campo obrigatorio ausente no payload: '{field}'")
         if data[field] is None:
-            raise ValueError(f"Campo '{field}' nao pode ser None.")
+            raise PayloadValidationError(f"Campo '{field}' nao pode ser None.")
 
     if not isinstance(data["game_name"], str) or not data["game_name"].strip():
-        raise ValueError("'game_name' deve ser uma string nao vazia.")
+        raise PayloadValidationError("'game_name' deve ser uma string nao vazia.")
 
     if not isinstance(data["mission_name"], str) or not data["mission_name"].strip():
-        raise ValueError("'mission_name' deve ser uma string nao vazia.")
+        raise PayloadValidationError("'mission_name' deve ser uma string nao vazia.")
 
     if not isinstance(data["current_issue"], str) or not data["current_issue"].strip():
-        raise ValueError("'current_issue' deve ser uma string nao vazia.")
+        raise PayloadValidationError("'current_issue' deve ser uma string nao vazia.")
 
     if data["help_type"] not in VALID_HELP_TYPES:
-        raise ValueError(
+        raise PayloadValidationError(
             f"'help_type' deve ser 'hint' ou 'answer'. Recebido: '{data['help_type']}'"
         )
 
     if not isinstance(data["player_inventory"], list):
-        raise ValueError("'player_inventory' deve ser uma lista de strings.")
+        raise PayloadValidationError("'player_inventory' deve ser uma lista de strings.")
 
 
 def build_initial_state(data: Dict[str, Any]) -> AgentState:
@@ -116,7 +133,20 @@ def run_agent(input_data: Dict[str, Any], thread_id: str = None) -> str:
 
     # --- Primeira execucao ---
     # O grafo roda ate pausar (interrupt_before) ou terminar
-    result = app.invoke(initial_state, config=config)
+    try:
+        result = app.invoke(initial_state, config=config)
+    except APIConnectionError as exc:
+        logger.error("Falha de API na primeira execucao: %s", exc)
+        raise
+    except EmptySearchResultError as exc:
+        logger.warning("Busca sem resultado: %s", exc)
+        raise
+    except ASGArdianError as exc:
+        logger.error("Erro do agente: %s", exc)
+        raise
+    except Exception as exc:
+        logger.error("Erro inesperado na execucao do grafo: %s", exc)
+        raise ASGArdianError(f"Erro inesperado: {exc}") from exc
 
     # --- Verifica se o grafo pausou no HITL ---
     snapshot = app.get_state(config)
@@ -150,7 +180,15 @@ def run_agent(input_data: Dict[str, Any], thread_id: str = None) -> str:
         )
 
         # Retoma o grafo a partir do ponto pausado
-        result = app.invoke(None, config=config)
+        try:
+            result = app.invoke(None, config=config)
+        except ASGArdianError as exc:
+            logger.error("Falha ao retomar grafo apos HITL: %s", exc)
+            raise
+        except Exception as exc:
+            logger.error("Erro inesperado ao retomar grafo: %s", exc)
+            raise ASGArdianError(f"Erro ao retomar execucao: {exc}") from exc
+
         snapshot = app.get_state(config)
         current_state = snapshot.values
 
