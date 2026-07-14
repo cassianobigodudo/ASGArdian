@@ -17,30 +17,39 @@ O ASGArdian recebe o contexto exato onde o jogador está travado e fornece **ape
 
 ## 🏗️ Arquitetura do Agente
 
-O coração da aplicação é um **StateGraph** do LangGraph com 6 nós e roteamento condicional:
+O coração da aplicação é um **StateGraph** do LangGraph com **5 nós** e roteamento condicional. Quando um item está faltando no inventário, o grafo reutiliza os mesmos nós de busca com um contexto atualizado — controlado pela flag `is_item_search` no estado para evitar loop infinito.
 
 ```
 [INPUT]
    │
    ▼
 fetch_guide_node          → Gemini busca detonados em tempo real (Google Search nativa)
-   │
+   │                         Na 2ª passagem: busca "como obter [missing_item]"
    ▼
 process_guide_node        → Extrai pré-requisitos, passo a passo e spoilers futuros
    │
    ▼
-verify_requirements_node  → Compara inventário do jogador com requisitos necessários
+verify_requirements_node  → Compara inventário com requisitos
+   │                         (ignorado quando is_item_search=True → evita loop)
    │
-   ├── missing_item? ──► [HITL: interrupt_before] ──► guide_missing_item_node
-   │                                                        │
-   │                                                        ▼
-   └── inventário ok? ──────────────────────────► generate_help_node
-                                                        │
-                                                        ▼
-                                                 critique_spoiler_node
-                                                        │
-                                                 ├── passed? ──► [END]
-                                                 └── failed? ──► generate_help_node (loop)
+   ├── missing_item + is_item_search=False
+   │       │
+   │       ▼
+   │   [HITL: pausa e aguarda user_approval]
+   │       │
+   │       ├── "sim" → atualiza current_issue + is_item_search=True → volta ao fetch_guide_node
+   │       └── "nao" → END (informa bloqueio)
+   │
+   └── ok ou is_item_search=True
+           │
+           ▼
+       generate_help_node    → Gera hint ou answer baseado no help_type
+           │
+           ▼
+       critique_spoiler_node → Audita a resposta contra spoilers futuros
+           │
+           ├── passed=True  → END
+           └── passed=False → generate_help_node (reescreve sem spoilers)
 ```
 
 ### Stack Tecnológica
@@ -175,14 +184,19 @@ Este item não foi encontrado no seu inventário.
 Deseja saber onde encontrá-lo? (sim/nao):
 ```
 
+**Se "sim":** o agente atualiza o contexto de busca e executa um novo ciclo completo de `fetch → process → generate → critique` focado em como obter o item, sem revelar o que acontece depois de obtê-lo.
+
+**Se "nao":** o agente encerra informando que o progresso está bloqueado pelo item faltante.
+
 ---
 
 ## 🔄 Human-in-the-Loop (HITL)
 
-Quando um pré-requisito está ausente no inventário, o grafo **pausa automaticamente** antes de revelar a localização do item. O sistema aguarda confirmação explícita do usuário:
+Quando um pré-requisito está ausente no inventário, o grafo **pausa automaticamente** antes de iniciar a nova busca. O sistema aguarda confirmação explícita do usuário via `user_approval`.
 
-- **`sim`** → O agente retoma o fluxo e gera o passo a passo para obter o item
-- **`nao`** → O agente encerra informando que o progresso está bloqueado pelo item faltante
+O reuso dos nós de busca é controlado pela flag `is_item_search` no `AgentState`:
+- `False` (padrão): fluxo normal, `verify_requirements_node` é executado
+- `True`: segunda passagem, `verify_requirements_node` é ignorado para evitar loop infinito
 
 ---
 
@@ -195,6 +209,8 @@ Toda resposta passa por um nó de crítica independente (`critique_spoiler_node`
 - ❌ Nenhuma reviravolta da história posterior ao ponto atual do jogador
 - ✅ Apenas mecânicas e elementos do cenário presente
 
+O filtro se aplica **tanto** à resposta do problema original **quanto** à resposta sobre como obter o item faltante.
+
 ---
 
 ## 📁 Estrutura do Projeto
@@ -204,8 +220,8 @@ ASGArdian/
 ├── backend/
 │   ├── main.py              # Ponto de entrada da aplicação
 │   ├── graph/
-│   │   ├── state.py         # Definição do AgentState
-│   │   ├── nodes.py         # Implementação dos 6 nós do grafo
+│   │   ├── state.py         # Definição do AgentState (inclui is_item_search e original_issue)
+│   │   ├── nodes.py         # Implementação dos 5 nós do grafo
 │   │   └── workflow.py      # Montagem e compilação do StateGraph
 │   ├── prompts/
 │   │   └── templates.py     # Templates de prompts por nó
