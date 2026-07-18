@@ -58,10 +58,7 @@ export default function ExecutionMonitor({
 
     wsRef.current.onerror = (error) => {
       console.error('❌ [Frontend] Erro WebSocket:', error)
-      // Não mostrar erro se a execução está em andamento
-      if (!isComplete) {
-        console.log('⚠️ [Frontend] Erro durante conexão, mas ignorando se execução está OK')
-      }
+      console.log('⚠️ [Frontend] Erro durante conexão')
     }
 
     wsRef.current.onclose = () => {
@@ -74,7 +71,7 @@ export default function ExecutionMonitor({
         wsRef.current.close()
       }
     }
-  }, [threadId, executionData, isComplete])
+  }, [threadId, executionData])
 
   const handleWebSocketMessage = (message) => {
     const { type, data, timestamp } = message
