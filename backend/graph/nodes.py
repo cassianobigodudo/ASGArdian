@@ -60,77 +60,80 @@ _max_total_execution_time = 300  # 5 minutos máximo
 
 def _search_web(query: str, num_results: int = 5) -> list:
     """
-    Busca na web usando DuckDuckGo e retorna resultados com conteúdo.
+    Busca na web usando DuckDuckGo - WHITELIST STRATEGY com FALLBACK.
     
-    Filtra e prioriza sites de guias/wikis, ignora vendas e anúncios.
+    Estratégia: 
+    - Tenta a query completa primeiro
+    - Se não encontrar domínios confiáveis, tenta versão reduzida
+    - Busca 100 resultados e retorna APENAS domínios de qualidade
     
     Args:
         query: Termo de busca
-        num_results: Número de resultados a buscar
+        num_results: Número de resultados a retornar (padrão 5)
     
     Returns:
         Lista de dicionários com {title, link, snippet, content}
     """
-    print(f"\n🌐 WEB SEARCH INICIADO")
-    print(f"   Query: {query}")
+    print(f"\n[WEB SEARCH] Query: {query}")
     
-    # Domínios PREFERIDOS (guias, wikis, tutoriais)
-    PREFERRED_DOMAINS = [
-        'ign.com', 'gamefaqs.com', 'fandom.com', 'wiki.', 'reddit.com/r/',
-        'youtube.com', 'twitch.tv', 'guides.co', 'polygon.com',
-        'venturebeat.com', 'metacritic.com', 'gamerguides.com'
+    # WHITELIST - domínios de qualidade
+    GOOD_DOMAINS = [
+        'ign.com', 'gamefaqs.com', 'fandom.com', 'wiki.',
+        'reddit.com', 'youtube.com', 'twitch.tv', 'polygon.com',
+        'gamerguides.com', '.org', '.edu',
+        'pinterest.', 'twitter.com', 'discord.', 'steam',
+        'guides.com', 'wikihow.', 'medium.com',
     ]
     
-    # Domínios IGNORADOS (vendas, anúncios, lojas)
-    BLOCKED_DOMAINS = [
-        'rockstargames.com', 'store.', 'shop', 'ebay.', 'amazon.',
-        'grancursosonline.com', 'udemy.', 'coursera.', 'skillshare.',
-        'marriott.', 'booking.', 'airbnb.', 'hotels.', 'trivago.',
-        'aliexpress.', 'mercadolivre.', 'olx.', 'classifieds.',
-        'ads.', 'advertising.', 'banner.', '.ad', 'promoted.'
-    ]
+    def search_and_filter(search_query):
+        """Helper: busca e filtra por whitelist"""
+        try:
+            ddgs = DDGS()
+            results = list(ddgs.text(search_query, max_results=100))
+            
+            if not results:
+                return []
+            
+            # Filtra por whitelist
+            good_results = []
+            for result in results:
+                link = result.get('href', '').lower()
+                if any(domain in link for domain in GOOD_DOMAINS):
+                    good_results.append(result)
+            
+            return good_results
+        except Exception as e:
+            print(f"   [ERRO] {str(e)[:50]}")
+            return []
     
     try:
         results = []
-        ddgs = DDGS()
         
-        print(f"   Buscando {num_results * 3} resultados (com filtro)...")
+        # TENTA 1: Query completa
+        print(f"   Tentativa 1: Query completa")
+        good_results = search_and_filter(query)
         
-        # Busca com DuckDuckGo - pede mais para poder filtrar
-        search_results = list(ddgs.text(query, max_results=num_results * 3))
+        if not good_results and ' ' in query:
+            # TENTA 2: Reduz para duas primeiras palavras + "guide"
+            words = query.split()
+            reduced_query = f"{words[0]} {words[1]} guide"
+            print(f"   Tentativa 2: Query reduzida: {reduced_query}")
+            good_results = search_and_filter(reduced_query)
         
-        if not search_results:
-            print(f"   ⚠️ Nenhum resultado encontrado")
+        if not good_results:
+            # TENTA 3: Apenas a primeira palavra
+            first_word = query.split()[0]
+            print(f"   Tentativa 3: Apenas primeira palavra: {first_word}")
+            good_results = search_and_filter(first_word)
+        
+        print(f"   [OK] {len(good_results)} resultados encontrados")
+        
+        if not good_results:
+            print(f"   [FALHA] Nenhum resultado após 3 tentativas")
             return []
         
-        print(f"   ✅ Encontrados {len(search_results)} resultados (antes de filtro)")
-        
-        # Filtra e prioriza resultados
-        filtered_results = []
-        preferred_results = []
-        
-        for result in search_results:
-            link = result.get('href', '').lower()
-            
-            # Verifica se está bloqueado
-            if any(blocked in link for blocked in BLOCKED_DOMAINS):
-                print(f"   ⛔ BLOQUEADO: {link[:60]}")
-                continue
-            
-            # Verifica se é preferido
-            is_preferred = any(preferred in link for preferred in PREFERRED_DOMAINS)
-            
-            if is_preferred:
-                preferred_results.append(result)
-            else:
-                filtered_results.append(result)
-        
-        # Prioriza resultados preferidos
-        final_results = preferred_results + filtered_results
-        print(f"   ✅ Após filtro: {len(final_results)} resultados ({len(preferred_results)} preferidos)")
-        
-        # Processa cada resultado até ter num_results válidos
-        for i, result in enumerate(final_results[:num_results * 2]):
+        # Processa cada resultado
+        for result in good_results:
             if len(results) >= num_results:
                 break
                 
@@ -139,28 +142,23 @@ def _search_web(query: str, num_results: int = 5) -> list:
                 link = result.get('href', '')
                 snippet = result.get('body', '')
                 
-                print(f"\n   📄 Resultado {len(results)+1}: {title[:60]}...")
-                print(f"      URL: {link}")
+                print(f"   [{len(results)+1}] {title[:60]}")
                 
-                # Tenta buscar conteúdo completo da página
-                content = ""
+                # Extrai conteúdo
+                content = snippet
                 if link:
                     try:
-                        print(f"      Buscando conteúdo completo...")
                         response = requests.get(link, timeout=5, headers={
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
                         })
                         
                         if response.status_code == 200:
                             soup = BeautifulSoup(response.content, 'html.parser')
-                            # Remove scripts e styles
                             for script in soup(["script", "style"]):
                                 script.decompose()
-                            content = soup.get_text(separator=' ', strip=True)[:2000]  # Limita a 2000 chars
-                            print(f"      ✅ Conteúdo extraído ({len(content)} chars)")
-                    except Exception as e:
-                        print(f"      ⚠️ Erro ao buscar conteúdo: {str(e)[:50]}")
-                        content = snippet
+                            content = soup.get_text(separator=' ', strip=True)[:2000]
+                    except:
+                        pass
                 
                 results.append({
                     'title': title,
@@ -170,14 +168,16 @@ def _search_web(query: str, num_results: int = 5) -> list:
                 })
                 
             except Exception as e:
-                print(f"      ❌ Erro ao processar resultado: {e}")
+                print(f"   [ERRO] {str(e)[:50]}")
                 continue
         
-        print(f"\n   🎉 Total de {len(results)} resultados processados")
+        print(f"   [RETORNO] {len(results)} resultados processados")
         return results
         
     except Exception as e:
-        print(f"   ❌ Erro na busca web: {e}")
+        print(f"   [FALHA] {e}")
+        logger.error(f"Erro na busca web: {e}")
+        return []
         logger.error(f"Erro na busca web: {e}")
         return []
 
