@@ -62,6 +62,8 @@ def _search_web(query: str, num_results: int = 5) -> list:
     """
     Busca na web usando DuckDuckGo e retorna resultados com conteúdo.
     
+    Filtra e prioriza sites de guias/wikis, ignora vendas e anúncios.
+    
     Args:
         query: Termo de busca
         num_results: Número de resultados a buscar
@@ -72,29 +74,72 @@ def _search_web(query: str, num_results: int = 5) -> list:
     print(f"\n🌐 WEB SEARCH INICIADO")
     print(f"   Query: {query}")
     
+    # Domínios PREFERIDOS (guias, wikis, tutoriais)
+    PREFERRED_DOMAINS = [
+        'ign.com', 'gamefaqs.com', 'fandom.com', 'wiki.', 'reddit.com/r/',
+        'youtube.com', 'twitch.tv', 'guides.co', 'polygon.com',
+        'venturebeat.com', 'metacritic.com', 'gamerguides.com'
+    ]
+    
+    # Domínios IGNORADOS (vendas, anúncios, lojas)
+    BLOCKED_DOMAINS = [
+        'rockstargames.com', 'store.', 'shop', 'ebay.', 'amazon.',
+        'grancursosonline.com', 'udemy.', 'coursera.', 'skillshare.',
+        'marriott.', 'booking.', 'airbnb.', 'hotels.', 'trivago.',
+        'aliexpress.', 'mercadolivre.', 'olx.', 'classifieds.',
+        'ads.', 'advertising.', 'banner.', '.ad', 'promoted.'
+    ]
+    
     try:
         results = []
         ddgs = DDGS()
         
-        print(f"   Buscando {num_results} resultados...")
+        print(f"   Buscando {num_results * 3} resultados (com filtro)...")
         
-        # Busca com DuckDuckGo
-        search_results = list(ddgs.text(query, max_results=num_results))
+        # Busca com DuckDuckGo - pede mais para poder filtrar
+        search_results = list(ddgs.text(query, max_results=num_results * 3))
         
         if not search_results:
             print(f"   ⚠️ Nenhum resultado encontrado")
             return []
         
-        print(f"   ✅ Encontrados {len(search_results)} resultados")
+        print(f"   ✅ Encontrados {len(search_results)} resultados (antes de filtro)")
         
-        # Processa cada resultado
-        for i, result in enumerate(search_results, 1):
+        # Filtra e prioriza resultados
+        filtered_results = []
+        preferred_results = []
+        
+        for result in search_results:
+            link = result.get('href', '').lower()
+            
+            # Verifica se está bloqueado
+            if any(blocked in link for blocked in BLOCKED_DOMAINS):
+                print(f"   ⛔ BLOQUEADO: {link[:60]}")
+                continue
+            
+            # Verifica se é preferido
+            is_preferred = any(preferred in link for preferred in PREFERRED_DOMAINS)
+            
+            if is_preferred:
+                preferred_results.append(result)
+            else:
+                filtered_results.append(result)
+        
+        # Prioriza resultados preferidos
+        final_results = preferred_results + filtered_results
+        print(f"   ✅ Após filtro: {len(final_results)} resultados ({len(preferred_results)} preferidos)")
+        
+        # Processa cada resultado até ter num_results válidos
+        for i, result in enumerate(final_results[:num_results * 2]):
+            if len(results) >= num_results:
+                break
+                
             try:
                 title = result.get('title', '')
                 link = result.get('href', '')
                 snippet = result.get('body', '')
                 
-                print(f"\n   📄 Resultado {i}: {title[:60]}...")
+                print(f"\n   📄 Resultado {len(results)+1}: {title[:60]}...")
                 print(f"      URL: {link}")
                 
                 # Tenta buscar conteúdo completo da página
@@ -358,15 +403,39 @@ def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     
     # ETAPA 1: Gera search_query automática
     print(f"\n📡 ETAPA 1: GERACAO DE SEARCH_QUERY")
-    search_query = f"{state['game_name']} {state['mission_name']} guide walkthrough"
+    
+    # Se é busca de item (is_item_search=True), usa current_issue. Caso contrário, usa mission_name
+    if state.get('is_item_search', False):
+        search_query = f"{state['game_name']} {state['current_issue']} guide walkthrough"
+    else:
+        search_query = f"{state['game_name']} {state['mission_name']} guide walkthrough"
+    
     print(f"   Query: {search_query}")
     
     web_results = _search_web(search_query, num_results=5)
     
     if not web_results:
-        print(f"\n   ⚠️ Nenhum resultado de web encontrado, usando LLM com mission_name...")
-        # Fallback: usa LLM com mission_name, não current_issue
-        prompt = f"""Você é um expert em videogames e detonados. Forneça informações detalhadas sobre como progredir neste jogo.
+        print(f"\n   ⚠️ Nenhum resultado de web encontrado, usando LLM com fallback...")
+        # Fallback: usa LLM com current_issue (que pode ser atualizado para busca de item)
+        if state.get('is_item_search', False):
+            # Busca de item: customiza o prompt
+            prompt = f"""Você é um expert em videogames e detonados. Forneça informações detalhadas sobre como obter um item específico.
+
+CONTEXTO DO JOGADOR:
+- Jogo: {state["game_name"]}
+- Necessidade: {state["current_issue"]}
+
+TAREFA:
+Forneça informações DETALHADAS sobre como obter o item solicitado, incluindo:
+1. Localização do item
+2. Pré-requisitos necessários
+3. Passo a passo técnico
+4. Dicas práticas
+
+Seja específico e detalhado."""
+        else:
+            # Busca de missão: usa prompt original
+            prompt = f"""Você é um expert em videogames e detonados. Forneça informações detalhadas sobre como progredir neste jogo.
 
 CONTEXTO DO JOGADOR:
 - Jogo: {state["game_name"]}
@@ -426,6 +495,28 @@ No final, liste as FONTES utilizadas com seus URLs."""
         try:
             raw_result = _invoke_llm(synthesis_prompt)
             print(f"   ✅ Síntese completada: {len(raw_result)} caracteres")
+            
+            if not raw_result or not raw_result.strip():
+                print(f"   ⚠️ Síntese retornou vazio, usando fallback LLM...")
+                # Se a síntese retornou vazio, usa fallback
+                if state.get('is_item_search', False):
+                    fallback_prompt = f"""Você é um expert em videogames. Forneça informações sobre como obter um item.
+
+CONTEXTO:
+- Jogo: {state['game_name']}
+- Necessidade: {state['current_issue']}
+
+Forneça uma resposta completa e detalhada."""
+                else:
+                    fallback_prompt = f"""Você é um expert em videogames. Forneça informações sobre como completar uma missão.
+
+CONTEXTO:
+- Jogo: {state['game_name']}
+- Missão: {state['mission_name']}
+
+Forneça uma resposta completa e detalhada."""
+                
+                raw_result = _invoke_llm(fallback_prompt)
         except Exception as exc:
             logger.error(f"❌ fetch_guide_node: falha na síntese com Groq: {exc}")
             raise APIConnectionError(
