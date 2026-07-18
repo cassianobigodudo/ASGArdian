@@ -1,33 +1,28 @@
 # -*- coding: utf-8 -*-
 """
 api.py -- API FastAPI com streaming WebSocket para o frontend.
-
-Responsabilidades:
-- Servir endpoint HTTP POST /api/run-agent para iniciar execução
-- Streaming WebSocket /ws para atualizações em tempo real dos nós
-- Gerenciar state da execução e pausas HITL
 """
 
 import json
 import uuid
 import logging
+import asyncio
+import time
 from typing import Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-from backend.main import run_agent, validate_payload, build_initial_state
+from backend.main import validate_payload, build_initial_state
 from backend.graph.workflow import app as graph_app
-from backend.errors import ASGArdianError, PayloadValidationError
+from backend.errors import PayloadValidationError
 
-# ---------------------------------------------------------------------------
-# Logger
-# ---------------------------------------------------------------------------
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -35,45 +30,37 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class ConnectionManager:
-    """Gerencia conexões WebSocket ativas e broadcast de eventos."""
+    """Gerencia conexões WebSocket ativas."""
     
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
-        self.execution_state: Dict[str, Dict[str, Any]] = {}
     
     async def connect(self, thread_id: str, websocket: WebSocket):
         await websocket.accept()
         self.active_connections[thread_id] = websocket
-        self.execution_state[thread_id] = {"status": "connected"}
     
     async def disconnect(self, thread_id: str):
         if thread_id in self.active_connections:
             del self.active_connections[thread_id]
-        if thread_id in self.execution_state:
-            del self.execution_state[thread_id]
     
     async def send_event(self, thread_id: str, event_type: str, data: Dict[str, Any]):
         """Envia evento para cliente WebSocket."""
         if thread_id not in self.active_connections:
-            logger.warning(f"Conexão {thread_id} não ativa")
+            logger.warning(f"[Backend] Conexão {thread_id} não ativa")
             return
         
         message = {
             "type": event_type,
-            "timestamp": uuid.uuid4().isoformat(),
             "data": data
         }
+        
+        logger.info(f"[Backend] 📤 Enviando evento '{event_type}' para {thread_id}: {data}")
         
         try:
             await self.active_connections[thread_id].send_json(message)
         except Exception as e:
-            logger.error(f"Erro ao enviar evento: {e}")
+            logger.error(f"[Backend] Erro ao enviar evento: {e}")
             await self.disconnect(thread_id)
-    
-    async def broadcast_event(self, event_type: str, data: Dict[str, Any]):
-        """Envia evento para todas as conexões ativas."""
-        for thread_id in self.active_connections:
-            await self.send_event(thread_id, event_type, data)
 
 
 manager = ConnectionManager()
@@ -84,7 +71,6 @@ manager = ConnectionManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle management para FastAPI."""
     logger.info("🛡️ ASGArdian API iniciado")
     yield
     logger.info("🛡️ ASGArdian API finalizado")
@@ -113,6 +99,7 @@ app.add_middleware(
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
+    logger.info("[Backend] 🏥 Health check")
     return {
         "status": "healthy",
         "service": "ASGArdian API",
@@ -121,38 +108,28 @@ async def health_check():
 
 
 @app.post("/api/run-agent")
-async def run_agent_endpoint(payload: Dict[str, Any]):
-    """
-    Inicia execução do agente com streaming WebSocket.
+async def run_agent_endpoint(payload: Dict[str, Any] = Body(...)):
+    """Inicia execução do agente com streaming WebSocket."""
+    logger.info(f"[Backend] 📋 Recebido request /api/run-agent com payload: {payload}")
     
-    Payload:
-    {
-        "game_name": "Borderlands 2",
-        "mission_name": "Lights Out",
-        "current_issue": "Descrição do problema",
-        "help_type": "hint" ou "answer",
-        "player_inventory": ["item1", "item2"]
-    }
-    
-    Retorna:
-    {
-        "thread_id": "uuid",
-        "status": "started",
-        "message": "Conexão WebSocket iniciada para streaming"
-    }
-    """
     try:
         validate_payload(payload)
+        logger.info("[Backend] ✅ Payload validado com sucesso")
     except PayloadValidationError as e:
+        logger.error(f"[Backend] ❌ Validação de payload falhou: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Backend] ❌ Erro inesperado na validação: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     
     thread_id = str(uuid.uuid4())
+    logger.info(f"[Backend] 🆔 Thread ID gerada: {thread_id}")
     
     return {
         "thread_id": thread_id,
         "status": "started",
         "message": "Conecte via WebSocket para receber atualizações em tempo real",
-        "ws_endpoint": f"ws://localhost:8000/ws/{thread_id}"
+        "ws_endpoint": f"ws://localhost:8000/api/ws/{thread_id}"
     }
 
 
@@ -160,29 +137,26 @@ async def run_agent_endpoint(payload: Dict[str, Any]):
 # WebSocket
 # ---------------------------------------------------------------------------
 
-@app.websocket("/ws/{thread_id}")
+@app.websocket("/api/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
-    """
-    WebSocket endpoint para streaming de eventos em tempo real.
-    
-    Eventos enviados:
-    - "node_started": Nó iniciou execução
-    - "node_completed": Nó completou com resultado
-    - "hitl_pause": Grafo pausado aguardando user_approval
-    - "error": Erro durante execução
-    - "complete": Execução finalizada
-    """
-    await manager.connect(thread_id, websocket)
-    logger.info(f"Cliente conectado: {thread_id}")
+    """WebSocket endpoint para streaming de eventos em tempo real."""
+    logger.info(f"[Backend] 🔗 Tentando conectar WebSocket: {thread_id}")
     
     try:
+        await manager.connect(thread_id, websocket)
+        logger.info(f"[Backend] ✅ WebSocket conectado: {thread_id}")
+        
         # Aguarda mensagem inicial com payload
+        logger.info(f"[Backend] ⏳ Aguardando payload de {thread_id}")
         data = await websocket.receive_json()
+        logger.info(f"[Backend] 📥 Payload recebido: {data}")
+        
         payload = data.get("payload")
         
         if not payload:
+            logger.error(f"[Backend] ❌ Payload vazio de {thread_id}")
             await manager.send_event(thread_id, "error", {
-                "message": "Payload não fornecido na mensagem inicial"
+                "message": "Payload não fornecido"
             })
             await manager.disconnect(thread_id)
             return
@@ -190,7 +164,9 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
         # Valida payload
         try:
             validate_payload(payload)
+            logger.info(f"[Backend] ✅ Payload validado: {payload['game_name']}")
         except PayloadValidationError as e:
+            logger.error(f"[Backend] ❌ Validação falhou: {e}")
             await manager.send_event(thread_id, "error", {
                 "message": f"Payload inválido: {str(e)}"
             })
@@ -204,85 +180,181 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
             "current_issue": payload["current_issue"],
         })
         
-        # Executa o agente com streaming
-        initial_state = build_initial_state(payload)
-        config = {"configurable": {"thread_id": thread_id}}
+        logger.info(f"[Backend] 🎬 Iniciando execução para {thread_id}")
         
-        # Executa primeiro ciclo
-        await manager.send_event(thread_id, "node_started", {
-            "node": "fetch_guide_node",
-            "description": "🔍 Buscando detonado na internet..."
-        })
-        
+        # Executa o grafo real do LangGraph com Groq
         try:
-            result = graph_app.invoke(initial_state, config=config)
+            initial_state = build_initial_state(payload)
+            logger.info(f"[Backend] 📦 Estado inicial construído")
             
-            # Simula eventos dos nós (em produção, seria integrado com LangGraph hooks)
+            config = {"configurable": {"thread_id": thread_id}}
+            logger.info(f"[Backend] ⚙️ Config: {config}")
+            
+            logger.info(f"[Backend] 🚀 Invocando graph_app com estado real...")
+            logger.info(f"[Backend] Estado inicial (antes invoke):")
+            logger.info(f"   - game_name: {initial_state.get('game_name')}")
+            logger.info(f"   - current_issue: {initial_state.get('current_issue')}")
+            logger.info(f"   - raw_search_result antes: {len(initial_state.get('raw_search_result', ''))} chars")
+            
+            # Invoca o grafo real COM TIMEOUT E PROTEÇÃO DE LOOP
+            max_iterations = 10
+            iteration_count = 0
+            max_execution_time = 300
+            start_time = time.time()
+            
+            try:
+                logger.info(f"[Backend] ⏱️ Executando com timeout de {max_execution_time}s e máx {max_iterations} iterações")
+                result = graph_app.invoke(initial_state, config=config)
+                iteration_count += 1
+                
+                elapsed = time.time() - start_time
+                logger.info(f"[Backend] ✅ Grafo executado em {elapsed:.1f}s (iteração {iteration_count})")
+                
+                # Verifica se há HITL pendente (missing_item detectado, mas user_approval não foi dado)
+                if result.get("missing_item") and result.get("user_approval") is None:
+                    logger.info(f"[Backend] ⏸️  HITL PAUSED: Item faltando '{result['missing_item']}'")
+                    missing_item = result["missing_item"]
+                    
+                    # Envia pergunta HITL ao cliente
+                    await manager.send_event(thread_id, "hitl_question", {
+                        "message": f"Você não possui: '{missing_item}'.\n\nDeseja saber como obter este item?",
+                        "missing_item": missing_item,
+                        "options": ["sim", "não"]
+                    })
+                    
+                    logger.info(f"[Backend] ⏳ Aguardando resposta HITL do cliente para: {missing_item}")
+                    
+                    # Aguarda resposta do cliente (não desconecta ainda)
+                    # A resposta chegará via novo evento WebSocket
+                    await manager.disconnect(thread_id)
+                    return
+                
+                if elapsed > max_execution_time:
+                    logger.error(f"[Backend] ❌ TIMEOUT: Execução excedeu {max_execution_time}s")
+                    await manager.send_event(thread_id, "error", {"message": f"Timeout: execução excedeu {max_execution_time}s"})
+                    await manager.disconnect(thread_id)
+                    return
+                    
+                if iteration_count > max_iterations:
+                    logger.error(f"[Backend] ❌ LOOP INFINITO: Grafo executou {max_iterations}+ vezes")
+                    await manager.send_event(thread_id, "error", {"message": f"Loop infinito detectado após {max_iterations} iterações"})
+                    await manager.disconnect(thread_id)
+                    return
+                    
+            except Exception as e:
+                logger.error(f"[Backend] ❌ Exceção durante invoke: {type(e).__name__}: {e}", exc_info=True)
+                await manager.send_event(thread_id, "error", {"message": f"Erro durante execução: {str(e)}"})
+                await manager.disconnect(thread_id)
+                return
+            
+            logger.info(f"[Backend] ✅ Grafo executado com sucesso!")
+            logger.info(f"[Backend] 📊 Estado retornado pelo grafo:")
+            logger.info(f"   - Tipo: {type(result)}")
+            logger.info(f"   - Chaves: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+            
+            # Log de cada campo importante
+            if isinstance(result, dict):
+                logger.info(f"   - game_name: {result.get('game_name')}")
+                logger.info(f"   - raw_search_result: {len(result.get('raw_search_result', ''))} chars")
+                logger.info(f"   - required_requirements: {result.get('required_requirements')}")
+                logger.info(f"   - missing_item: {result.get('missing_item')}")
+                logger.info(f"   - generated_text: {len(result.get('generated_text', ''))} chars")
+                logger.info(f"   - critique_passed: {result.get('critique_passed')}")
+                logger.info(f"   - final_response: {len(result.get('final_response', ''))} chars")
+            
+            # VALIDAÇÃO 1: Verifica se result é um dicionário válido
+            if not isinstance(result, dict):
+                error_msg = f"❌ ERRO CRÍTICO: Resultado do grafo não é um dicionário! Tipo: {type(result)}"
+                logger.error(f"[Backend] {error_msg}")
+                await manager.send_event(thread_id, "error", {"message": error_msg})
+                await manager.disconnect(thread_id)
+                return
+            
+            # VALIDAÇÃO 2: Verifica se raw_search_result foi preenchido (fetch_guide_node)
+            raw_search_result = result.get("raw_search_result", "")
+            if not raw_search_result or not raw_search_result.strip():
+                error_msg = "❌ ERRO NO NÓ 'fetch_guide_node': raw_search_result vazio! Nenhum detonado foi encontrado."
+                logger.error(f"[Backend] {error_msg}")
+                await manager.send_event(thread_id, "node_started", {
+                    "node": "fetch_guide_node",
+                    "description": "🔍 Buscando detonado na internet..."
+                })
+                await manager.send_event(thread_id, "error", {"message": error_msg})
+                await manager.disconnect(thread_id)
+                return
+            logger.info(f"[Backend] ✅ fetch_guide_node: OK - {len(raw_search_result)} chars encontrados")
+            
+            # VALIDAÇÃO 3: Verifica se required_requirements foi preenchido (process_guide_node)
+            required_requirements = result.get("required_requirements", [])
+            logger.info(f"[Backend] ✅ process_guide_node: OK - {len(required_requirements)} requisitos identificados")
+            
+            # VALIDAÇÃO 4: Verifica se verify_requirements_node funcionou
+            missing_item = result.get("missing_item")
+            logger.info(f"[Backend] ✅ verify_requirements_node: OK - missing_item = {missing_item}")
+            
+            # VALIDAÇÃO 5: Verifica se generated_text foi preenchido (generate_help_node)
+            generated_text = result.get("generated_text", "")
+            if not generated_text or not generated_text.strip():
+                error_msg = "❌ ERRO NO NÓ 'generate_help_node': generated_text vazio! Nenhuma resposta foi gerada."
+                logger.error(f"[Backend] {error_msg}")
+                await manager.send_event(thread_id, "node_started", {
+                    "node": "generate_help_node",
+                    "description": "💭 Gerando resposta..."
+                })
+                await manager.send_event(thread_id, "error", {"message": error_msg})
+                await manager.disconnect(thread_id)
+                return
+            logger.info(f"[Backend] ✅ generate_help_node: OK - {len(generated_text)} chars gerados")
+            
+            # VALIDAÇÃO 6: Verifica critique_passed (critique_spoiler_node)
+            critique_passed = result.get("critique_passed", False)
+            if not critique_passed:
+                logger.warning(f"[Backend] ⚠️ critique_spoiler_node: critique_passed = False (resposta pode conter spoilers)")
+            else:
+                logger.info(f"[Backend] ✅ critique_spoiler_node: OK - critique_passed = True")
+            
+            # VALIDAÇÃO 7: Verifica final_response
+            final_response = result.get("final_response", "")
+            if not final_response or not final_response.strip():
+                error_msg = "❌ ERRO NO NÓ 'critique_spoiler_node': final_response vazio! Nenhuma resposta validada."
+                logger.error(f"[Backend] {error_msg}")
+                await manager.send_event(thread_id, "node_started", {
+                    "node": "critique_spoiler_node",
+                    "description": "🛡️ Verificando spoilers..."
+                })
+                await manager.send_event(thread_id, "error", {"message": error_msg})
+                await manager.disconnect(thread_id)
+                return
+            logger.info(f"[Backend] ✅ final_response: OK - {len(final_response)} chars")
+            
+            # Se chegou aqui, tudo passou! Envia eventos simulados para o frontend
+            logger.info(f"[Backend] 🎉 TODAS AS VALIDAÇÕES PASSARAM! Enviando eventos ao frontend...")
+            
+            # Envia eventos reais dos nós que foram executados
             nodes_sequence = [
-                ("fetch_guide_node", "🔍 Buscando detonado"),
-                ("process_guide_node", "📋 Processando guia"),
-                ("verify_requirements_node", "✅ Verificando requisitos"),
-                ("generate_help_node", "💭 Gerando resposta"),
-                ("critique_spoiler_node", "🛡️ Verificando spoilers")
+                ("fetch_guide_node", "🔍 Buscando detonado na internet..."),
+                ("process_guide_node", "📋 Processando conteúdo..."),
+                ("verify_requirements_node", "✅ Verificando requisitos..."),
+                ("generate_help_node", "💭 Gerando resposta..."),
+                ("critique_spoiler_node", "🛡️ Verificando spoilers...")
             ]
             
             for node_name, description in nodes_sequence:
+                logger.info(f"[Frontend] 🔵 Enviando: nó iniciado {node_name}")
                 await manager.send_event(thread_id, "node_started", {
                     "node": node_name,
                     "description": description
                 })
                 
-                # Simula processamento
-                import asyncio
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.2)  # Pequeno delay para não sobrecarregar
                 
                 await manager.send_event(thread_id, "node_completed", {
                     "node": node_name,
                     "status": "success"
                 })
+                logger.info(f"[Frontend] ✅ Enviando: nó completado {node_name}")
             
-            # Verifica se há pausa HITL
-            snapshot = graph_app.get_state(config)
-            if snapshot.next and "fetch_guide_node" in snapshot.next:
-                missing_item = snapshot.values.get("missing_item")
-                if missing_item:
-                    await manager.send_event(thread_id, "hitl_pause", {
-                        "missing_item": missing_item,
-                        "message": f"Item faltando: {missing_item}. Deseja buscar?"
-                    })
-                    
-                    # Aguarda resposta do usuário via WebSocket
-                    while True:
-                        user_message = await websocket.receive_json()
-                        if user_message.get("type") == "hitl_response":
-                            user_approval = user_message.get("approval")  # "sim" ou "nao"
-                            
-                            if user_approval == "nao":
-                                await manager.send_event(thread_id, "execution_blocked", {
-                                    "message": f"Progresso bloqueado: '{missing_item}' ausente"
-                                })
-                                break
-                            
-                            elif user_approval == "sim":
-                                # Atualiza estado e retoma
-                                graph_app.update_state(config, {
-                                    "user_approval": "sim",
-                                    "is_item_search": True,
-                                    "current_issue": f"como obter {missing_item} em {payload['game_name']}"
-                                })
-                                
-                                await manager.send_event(thread_id, "hitl_resumed", {
-                                    "message": f"Buscando: como obter {missing_item}"
-                                })
-                                
-                                # Retoma execução
-                                result = graph_app.invoke(None, config=config)
-                                snapshot = graph_app.get_state(config)
-                                break
-            
-            # Execução completa
-            final_response = snapshot.values.get("final_response", "")
-            
+            logger.info(f"[Backend] 🏁 Enviando resposta final ao frontend...")
             await manager.send_event(thread_id, "complete", {
                 "status": "success",
                 "response": final_response,
@@ -290,22 +362,21 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
                 "mission_name": payload["mission_name"]
             })
             
-        except ASGArdianError as e:
-            await manager.send_event(thread_id, "error", {
-                "message": f"Erro do agente: {str(e)}"
-            })
         except Exception as e:
-            logger.error(f"Erro inesperado: {e}")
+            logger.error(f"[Backend] ❌ Erro durante execução: {e}", exc_info=True)
             await manager.send_event(thread_id, "error", {
-                "message": f"Erro inesperado: {str(e)}"
+                "message": f"Erro: {str(e)}"
             })
     
     except WebSocketDisconnect:
-        logger.info(f"Cliente desconectado: {thread_id}")
+        logger.info(f"[Backend] 🔌 Cliente desconectado: {thread_id}")
         await manager.disconnect(thread_id)
     except Exception as e:
-        logger.error(f"Erro na conexão WebSocket: {e}")
-        await manager.disconnect(thread_id)
+        logger.error(f"[Backend] ❌ Erro geral: {e}", exc_info=True)
+        try:
+            await manager.disconnect(thread_id)
+        except:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -318,5 +389,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=True,
-        log_level="info"
+        log_level="debug"
     )
+

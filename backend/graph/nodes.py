@@ -19,7 +19,6 @@ import signal
 import requests
 from typing import Any, Dict
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
@@ -41,6 +40,7 @@ from backend.prompts.templates import (
     GENERATE_ANSWER_PROMPT,
     CRITIQUE_SPOILER_PROMPT,
 )
+from backend.guides_loader import get_guides_loader
 
 # ---------------------------------------------------------------------------
 # Logger do modulo
@@ -57,129 +57,6 @@ _node_execution_count = {}
 _max_node_executions = 5  # Máximo de vezes que um nó pode ser executado
 _total_execution_time_start = None
 _max_total_execution_time = 300  # 5 minutos máximo
-
-def _search_web(query: str, num_results: int = 5) -> list:
-    """
-    Busca na web usando DuckDuckGo - WHITELIST STRATEGY com FALLBACK.
-    
-    Estratégia: 
-    - Tenta a query completa primeiro
-    - Se não encontrar domínios confiáveis, tenta versão reduzida
-    - Busca 100 resultados e retorna APENAS domínios de qualidade
-    
-    Args:
-        query: Termo de busca
-        num_results: Número de resultados a retornar (padrão 5)
-    
-    Returns:
-        Lista de dicionários com {title, link, snippet, content}
-    """
-    print(f"\n[WEB SEARCH] Query: {query}")
-    
-    # WHITELIST - domínios de qualidade
-    GOOD_DOMAINS = [
-        'ign.com', 'gamefaqs.com', 'fandom.com', 'wiki.',
-        'reddit.com', 'youtube.com', 'twitch.tv', 'polygon.com',
-        'gamerguides.com', '.org', '.edu',
-        'pinterest.', 'twitter.com', 'discord.', 'steam',
-        'guides.com', 'wikihow.', 'medium.com',
-    ]
-    
-    def search_and_filter(search_query):
-        """Helper: busca e filtra por whitelist"""
-        try:
-            ddgs = DDGS()
-            results = list(ddgs.text(search_query, max_results=100))
-            
-            if not results:
-                return []
-            
-            # Filtra por whitelist
-            good_results = []
-            for result in results:
-                link = result.get('href', '').lower()
-                if any(domain in link for domain in GOOD_DOMAINS):
-                    good_results.append(result)
-            
-            return good_results
-        except Exception as e:
-            print(f"   [ERRO] {str(e)[:50]}")
-            return []
-    
-    try:
-        results = []
-        
-        # TENTA 1: Query completa
-        print(f"   Tentativa 1: Query completa")
-        good_results = search_and_filter(query)
-        
-        if not good_results and ' ' in query:
-            # TENTA 2: Reduz para duas primeiras palavras + "guide"
-            words = query.split()
-            reduced_query = f"{words[0]} {words[1]} guide"
-            print(f"   Tentativa 2: Query reduzida: {reduced_query}")
-            good_results = search_and_filter(reduced_query)
-        
-        if not good_results:
-            # TENTA 3: Apenas a primeira palavra
-            first_word = query.split()[0]
-            print(f"   Tentativa 3: Apenas primeira palavra: {first_word}")
-            good_results = search_and_filter(first_word)
-        
-        print(f"   [OK] {len(good_results)} resultados encontrados")
-        
-        if not good_results:
-            print(f"   [FALHA] Nenhum resultado após 3 tentativas")
-            return []
-        
-        # Processa cada resultado
-        for result in good_results:
-            if len(results) >= num_results:
-                break
-                
-            try:
-                title = result.get('title', '')
-                link = result.get('href', '')
-                snippet = result.get('body', '')
-                
-                print(f"   [{len(results)+1}] {title[:60]}")
-                
-                # Extrai conteúdo
-                content = snippet
-                if link:
-                    try:
-                        response = requests.get(link, timeout=5, headers={
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-                        })
-                        
-                        if response.status_code == 200:
-                            soup = BeautifulSoup(response.content, 'html.parser')
-                            for script in soup(["script", "style"]):
-                                script.decompose()
-                            content = soup.get_text(separator=' ', strip=True)[:2000]
-                    except:
-                        pass
-                
-                results.append({
-                    'title': title,
-                    'link': link,
-                    'snippet': snippet,
-                    'content': content or snippet
-                })
-                
-            except Exception as e:
-                print(f"   [ERRO] {str(e)[:50]}")
-                continue
-        
-        print(f"   [RETORNO] {len(results)} resultados processados")
-        return results
-        
-    except Exception as e:
-        print(f"   [FALHA] {e}")
-        logger.error(f"Erro na busca web: {e}")
-        return []
-        logger.error(f"Erro na busca web: {e}")
-        return []
 
 def _check_execution_limits(node_name: str):
     """Verifica se atingiu limites de execução para evitar loops infinitos."""
@@ -378,10 +255,13 @@ def analyze_problem_node(state: AgentState) -> Dict[str, Any]:
 
 def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     """
-    Busca detonados NA WEB usando DuckDuckGo com query simples.
+    Busca detonados NA IGN usando o banco de dados guides_database.json.
     
-    Query gerada automaticamente: "[game_name] [mission_name] guide walkthrough"
-    Sem análise de problema - direto para a busca.
+    Estratégia:
+    1. Procura jogo + missão no banco de dados
+    2. Extrai conteúdo do link da IGN
+    3. Se encontrado, retorna conteúdo + fontes
+    4. Se não encontrado, usa fallback com LLM
 
     Retorna: raw_search_result populado com conteúdo sintetizado + links em ---FONTES---.
     """
@@ -389,163 +269,90 @@ def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     _check_execution_limits("fetch_guide_node")
     
     print(f"\n{'='*80}")
-    print(f"🔍 NÓ 1: FETCH_GUIDE_NODE (WEB SEARCH)")
+    print(f"[NÓ 1] FETCH_GUIDE_NODE (IGN DIRECT)")
     print(f"{'='*80}")
-    print(f"📥 INPUT DO NÓ:")
+    print(f"[INPUT]")
     print(f"   game_name: {state['game_name']}")
     print(f"   mission_name: {state['mission_name']}")
     print(f"   current_issue: {state['current_issue']}")
     print(f"   is_item_search: {state.get('is_item_search', False)}")
     
-    logger.debug(f"🔍 fetch_guide_node iniciado (WEB SEARCH)")
+    logger.debug(f"[NÓ 1] fetch_guide_node iniciado (IGN DIRECT)")
     logger.debug(f"   - game_name: {state['game_name']}")
     logger.debug(f"   - mission_name: {state['mission_name']}")
     
-    # ETAPA 1: Gera search_query automática
-    print(f"\n📡 ETAPA 1: GERACAO DE SEARCH_QUERY")
+    raw_result = None
     
-    # Se é busca de item (is_item_search=True), usa current_issue. Caso contrário, usa mission_name
+    # ETAPA 1: Tenta buscar no banco de dados IGN
+    print(f"\n[ETAPA 1] BUSCA NO BANCO DE DADOS IGN")
+    
+    guides_loader = get_guides_loader()
+    
     if state.get('is_item_search', False):
-        search_query = f"{state['game_name']} {state['current_issue']} guide walkthrough"
+        # Se for busca de item, tenta procurar item específico
+        search_game = state['game_name']
+        search_mission = state['current_issue']
+        print(f"   Modo: Busca de Item")
     else:
-        search_query = f"{state['game_name']} {state['mission_name']} guide walkthrough"
+        # Busca normal por missão
+        search_game = state['game_name']
+        search_mission = state['mission_name']
+        print(f"   Modo: Busca de Missão")
     
-    print(f"   Query: {search_query}")
+    guide_result = guides_loader.get_guide_content(search_game, search_mission)
     
-    web_results = _search_web(search_query, num_results=5)
+    if guide_result:
+        url, content = guide_result
+        print(f"\n   [OK] Guia encontrado na IGN!")
+        
+        # Formata resultado com fontes
+        raw_result = f"{content}\n\n---FONTES---\n1. IGN Walkthrough\n   Link: {url}"
+        print(f"   Conteudo: {len(content)} chars")
+    else:
+        print(f"\n   [AVISO] Guia nao encontrado no banco de dados, usando LLM fallback...")
     
-    if not web_results:
-        print(f"\n   ⚠️ Nenhum resultado de web encontrado, usando LLM com fallback...")
-        # Fallback: usa LLM com current_issue (que pode ser atualizado para busca de item)
+    # ETAPA 2: Se não encontrou no banco, usa LLM como fallback
+    if not raw_result:
+        print(f"\n[ETAPA 2] FALLBACK COM LLM")
+        
         if state.get('is_item_search', False):
-            # Busca de item: customiza o prompt
-            prompt = f"""Você é um expert em videogames e detonados. Forneça informações detalhadas sobre como obter um item específico.
-
-CONTEXTO DO JOGADOR:
-- Jogo: {state["game_name"]}
-- Necessidade: {state["current_issue"]}
-
-TAREFA:
-Forneça informações DETALHADAS sobre como obter o item solicitado, incluindo:
-1. Localização do item
-2. Pré-requisitos necessários
-3. Passo a passo técnico
-4. Dicas práticas
-
-Seja específico e detalhado."""
-        else:
-            # Busca de missão: usa prompt original
-            prompt = f"""Você é um expert em videogames e detonados. Forneça informações detalhadas sobre como progredir neste jogo.
-
-CONTEXTO DO JOGADOR:
-- Jogo: {state["game_name"]}
-- Missão/Localização: {state["mission_name"]}
-
-TAREFA:
-Forneça informações DETALHADAS e ESPECÍFICAS sobre como completar esta missão/localização, incluindo:
-1. Pré-requisitos (itens, habilidades)
-2. Passo a passo técnico
-3. Potenciais spoilers de enredo que vem DEPOIS
-4. Dicas práticas
-
-Seja específico e detalhado."""
-        try:
-            raw_result = _invoke_llm(prompt)
-            print(f"   ✅ LLM retornou (fallback): {len(raw_result)} caracteres")
-        except Exception as exc:
-            logger.error(f"❌ fetch_guide_node: falha na chamada ao LLM (fallback): {exc}")
-            raise APIConnectionError(
-                f"Falha ao buscar detonado. Web search vazio e LLM também falhou. Detalhe: {exc}"
-            ) from exc
-    else:
-        # ETAPA 2: Sintetiza resultados com Groq
-        print(f"\n🧠 ETAPA 2: SÍNTESE COM GROQ")
-        
-        # Prepara conteúdo dos resultados para o LLM
-        web_content = "\n\n---\n\n".join([
-            f"📄 {r['title']}\nURL: {r['link']}\n\nConteúdo: {r['content']}"
-            for r in web_results
-        ])
-        
-        print(f"   Enviando {len(web_results)} resultados para síntese...")
-        
-        synthesis_prompt = f"""Você recebeu resultados de busca web sobre um detonado de videogame. 
-Sintetize as informações em uma resposta completa e útil.
-
-CONTEXTO DO JOGADOR:
-- Jogo: {state['game_name']}
-- Missão/Localização: {state['mission_name']}
-
-RESULTADOS DA BUSCA WEB:
----
-{web_content}
----
-
-INSTRUÇÕES:
-1. Sintetize as informações encontradas em uma resposta coerente
-2. Mantenha as URLs dos sites de origem para referência
-3. Inclua pré-requisitos (itens, habilidades) necessários
-4. Descreva o passo a passo para resolver
-5. Mencione possíveis spoilers futuros se relevante
-
-FORMATO:
-Forneça uma resposta completa que combina informações dos sites listados acima.
-No final, liste as FONTES utilizadas com seus URLs."""
-
-        try:
-            raw_result = _invoke_llm(synthesis_prompt)
-            print(f"   ✅ Síntese completada: {len(raw_result)} caracteres")
-            
-            if not raw_result or not raw_result.strip():
-                print(f"   ⚠️ Síntese retornou vazio, usando fallback LLM...")
-                # Se a síntese retornou vazio, usa fallback
-                if state.get('is_item_search', False):
-                    fallback_prompt = f"""Você é um expert em videogames. Forneça informações sobre como obter um item.
+            fallback_prompt = f"""Você é um expert em videogames. Forneça informações sobre como obter um item.
 
 CONTEXTO:
 - Jogo: {state['game_name']}
 - Necessidade: {state['current_issue']}
 
 Forneça uma resposta completa e detalhada."""
-                else:
-                    fallback_prompt = f"""Você é um expert em videogames. Forneça informações sobre como completar uma missão.
+        else:
+            fallback_prompt = f"""Você é um expert em videogames. Forneça informações sobre como completar uma missão.
 
 CONTEXTO:
 - Jogo: {state['game_name']}
 - Missão: {state['mission_name']}
 
 Forneça uma resposta completa e detalhada."""
-                
-                raw_result = _invoke_llm(fallback_prompt)
+        
+        try:
+            raw_result = _invoke_llm(fallback_prompt)
+            print(f"   [OK] LLM retornou: {len(raw_result)} caracteres")
         except Exception as exc:
-            logger.error(f"❌ fetch_guide_node: falha na síntese com Groq: {exc}")
+            logger.error(f"[ERRO] fetch_guide_node: falha na chamada ao LLM (fallback): {exc}")
             raise APIConnectionError(
-                f"Falha ao sintetizar resultados de web search. Detalhe: {exc}"
+                f"Falha ao buscar detonado. Banco de dados vazio e LLM tambem falhou. Detalhe: {exc}"
             ) from exc
-        
-        # ETAPA 3: Enriquece com seção de fontes
-        print(f"\n📚 ETAPA 3: ADIÇÃO DE FONTES")
-        
-        # Cria seção de fontes
-        sources_section = "\n\n---FONTES---\n"
-        for i, result in enumerate(web_results, 1):
-            sources_section += f"{i}. {result['title']}\n   🔗 {result['link']}\n"
-        
-        raw_result = raw_result + sources_section
-        print(f"   ✅ Seção de fontes adicionada com {len(web_results)} links")
 
     if not raw_result or not raw_result.strip():
-        print(f"   ❌ raw_result VAZIO!")
-        logger.error(f"❌ fetch_guide_node: raw_result vazio!")
+        print(f"   [ERRO] raw_result VAZIO!")
+        logger.error(f"[ERRO] fetch_guide_node: raw_result vazio!")
         raise EmptySearchResultError(
             f"A busca para '{state['current_issue']}' em '{state['game_name']}' "
             "nao retornou nenhum conteudo. Tente reformular o problema."
         )
 
-    print(f"   ✅ raw_search_result preenchido com sucesso ({len(raw_result)} chars)")
-    logger.debug(f"✅ raw_search_result preenchido com sucesso")
+    print(f"   [OK] raw_search_result preenchido com sucesso ({len(raw_result)} chars)")
+    logger.debug(f"[OK] raw_search_result preenchido com sucesso")
     
-    print(f"\n📤 OUTPUT DO NÓ:")
+    print(f"\n[OUTPUT]")
     print(f"   raw_search_result: {len(raw_result)} caracteres")
     print(f"   Primeiros 300 chars: {raw_result[:300]}...")
     print(f"{'='*80}\n")

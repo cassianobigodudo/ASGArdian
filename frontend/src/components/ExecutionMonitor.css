@@ -156,7 +156,8 @@
 }
 
 .button-reset,
-.button-reset-main {
+.button-reset-main,
+.button-back {
   background: linear-gradient(90deg, #e74c3c, #c0392b);
   color: white;
   padding: 12px 24px;
@@ -167,19 +168,38 @@
   transition: all 0.3s;
 }
 
+.button-back {
+  background: linear-gradient(90deg, #3498db, #2980b9);
+}
+
 .button-reset:hover,
-.button-reset-main:hover {
+.button-reset-main:hover,
+.button-back:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 16px rgba(231, 76, 60, 0.3);
 }
 
-.button-reset-main {
+.button-back:hover {
+  box-shadow: 0 8px 16px rgba(52, 152, 219, 0.3);
+}
+
+.button-reset-main,
+.completion-actions {
   position: fixed;
   bottom: 2rem;
   right: 2rem;
-  padding: 16px 32px;
-  font-size: 1rem;
+  display: flex;
+  gap: 1rem;
   z-index: 100;
+}
+
+.completion-actions {
+  position: relative;
+  bottom: auto;
+  right: auto;
+  flex-direction: row;
+  gap: 1rem;
+  padding: 2rem;
 }
 
 @media (max-width: 1024px) {

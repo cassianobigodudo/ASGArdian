@@ -1,0 +1,66 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import json
+
+data = {
+    "guides": [
+        {
+            "game": "Grand Theft Auto V",
+            "game_aliases": ["GTA 5", "GTA V", "GTA5"],
+            "missions": [
+                {
+                    "name": "Crystal Maze",
+                    "mission_aliases": ["Crystal Maze Mission", "Trevor Mission 19"],
+                    "source": "IGN",
+                    "url": "https://www.ign.com/wikis/gta-5/Crystal_Maze",
+                    "content_extractor": "ign_guide"
+                },
+                {
+                    "name": "Prologue",
+                    "mission_aliases": ["Intro", "Introduction"],
+                    "source": "IGN",
+                    "url": "https://www.ign.com/wikis/gta-5/Prologue",
+                    "content_extractor": "ign_guide"
+                },
+                {
+                    "name": "Franklin and Lamar",
+                    "mission_aliases": ["Franklin Lamar"],
+                    "source": "IGN",
+                    "url": "https://www.ign.com/wikis/gta-5/Franklin_and_Lamar",
+                    "content_extractor": "ign_guide"
+                }
+            ]
+        },
+        {
+            "game": "Red Dead Redemption 2",
+            "game_aliases": ["Red Dead 2", "RDR2", "Red Dead"],
+            "missions": [
+                {
+                    "name": "Outlaws from the West",
+                    "mission_aliases": ["Intro Mission"],
+                    "source": "IGN",
+                    "url": "https://www.ign.com/wikis/red-dead-redemption-2/Outlaws_from_the_West",
+                    "content_extractor": "ign_guide"
+                }
+            ]
+        },
+        {
+            "game": "Hollow Knight",
+            "game_aliases": ["Hollow Knight Game"],
+            "missions": [
+                {
+                    "name": "False Knight",
+                    "mission_aliases": ["False Knight Boss"],
+                    "source": "IGN",
+                    "url": "https://www.ign.com/wikis/hollow-knight/False_Knight",
+                    "content_extractor": "ign_guide"
+                }
+            ]
+        }
+    ]
+}
+
+with open('backend/guides_database.json', 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+
+print("✓ JSON criado com sucesso")

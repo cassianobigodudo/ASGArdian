@@ -34,12 +34,16 @@ export default function ExecutionMonitor({
     })
     setNodeStatus(initialStatus)
 
-    // Conecta WebSocket
-    const wsUrl = `ws://localhost:8000/ws/${threadId}`
+    // Conecta WebSocket direto ao backend (sem proxy)
+    const wsUrl = `ws://localhost:8000/api/ws/${threadId}`
+    
+    console.log('🔗 [Frontend] Conectando WebSocket:', wsUrl)
+    console.log('📤 [Frontend] Payload a enviar:', executionData)
     wsRef.current = new WebSocket(wsUrl)
 
     wsRef.current.onopen = () => {
-      console.log('WebSocket conectado')
+      console.log('✅ [Frontend] WebSocket conectado com sucesso!')
+      console.log('📤 [Frontend] Enviando payload:', JSON.stringify(executionData, null, 2))
       // Envia payload
       wsRef.current.send(JSON.stringify({
         payload: executionData
@@ -48,37 +52,45 @@ export default function ExecutionMonitor({
 
     wsRef.current.onmessage = (event) => {
       const message = JSON.parse(event.data)
+      console.log('📥 [Frontend] Mensagem recebida:', message)
       handleWebSocketMessage(message)
     }
 
     wsRef.current.onerror = (error) => {
-      console.error('Erro WebSocket:', error)
-      setError('Erro na conexão com servidor')
+      console.error('❌ [Frontend] Erro WebSocket:', error)
+      // Não mostrar erro se a execução está em andamento
+      if (!isComplete) {
+        console.log('⚠️ [Frontend] Erro durante conexão, mas ignorando se execução está OK')
+      }
     }
 
     wsRef.current.onclose = () => {
-      console.log('WebSocket desconectado')
+      console.log('🔌 [Frontend] WebSocket desconectado')
     }
 
     return () => {
       if (wsRef.current) {
+        console.log('🧹 [Frontend] Limpando conexão WebSocket')
         wsRef.current.close()
       }
     }
-  }, [threadId, executionData])
+  }, [threadId, executionData, isComplete])
 
   const handleWebSocketMessage = (message) => {
     const { type, data, timestamp } = message
+
+    console.log(`📨 [Frontend] Tipo: ${type}`, data)
 
     // Adiciona evento ao log
     setEvents(prev => [...prev, { type, data, timestamp }])
 
     switch (type) {
       case 'execution_start':
-        console.log('Execução iniciada:', data)
+        console.log('🎬 [Frontend] Execução iniciada:', data)
         break
 
       case 'node_started':
+        console.log(`🔵 [Frontend] Nó iniciado: ${data.node}`)
         setNodeStatus(prev => ({
           ...prev,
           [data.node]: 'running'
@@ -86,13 +98,15 @@ export default function ExecutionMonitor({
         break
 
       case 'node_completed':
+        console.log(`✅ [Frontend] Nó completado: ${data.node}`)
         setNodeStatus(prev => ({
           ...prev,
           [data.node]: 'success'
         }))
         break
 
-      case 'hitl_pause':
+      case 'hitl_question':
+        console.log('❓ [Frontend] Pergunta HITL:', data)
         setHitlData({
           missing_item: data.missing_item,
           message: data.message
@@ -100,6 +114,7 @@ export default function ExecutionMonitor({
         break
 
       case 'hitl_resumed':
+        console.log('▶️ [Frontend] Retomando após HITL:', data)
         setHitlData(null)
         setNodeStatus(prev => ({
           ...prev,
@@ -108,12 +123,14 @@ export default function ExecutionMonitor({
         break
 
       case 'execution_blocked':
+        console.log('🚫 [Frontend] Execução bloqueada:', data)
         setError(data.message)
         setIsComplete(true)
         onComplete()
         break
 
       case 'complete':
+        console.log('🏁 [Frontend] Execução completa:', data)
         setNodeStatus(prev => ({
           ...prev,
           'critique_spoiler_node': 'success'
@@ -124,6 +141,7 @@ export default function ExecutionMonitor({
         break
 
       case 'error':
+        console.log('❌ [Frontend] Erro recebido:', data)
         setNodeStatus(prev => ({
           ...prev,
           [prev[Object.keys(prev).find(key => prev[key] === 'running')] || 'fetch_guide_node']: 'error'
@@ -134,6 +152,7 @@ export default function ExecutionMonitor({
         break
 
       default:
+        console.log('❓ [Frontend] Tipo desconhecido:', type)
         break
     }
   }
@@ -230,9 +249,14 @@ export default function ExecutionMonitor({
 
       {/* Botão de Reset */}
       {isComplete && (
-        <button onClick={onReset} className="button-reset-main">
-          🔄 Nova Busca
-        </button>
+        <div className="completion-actions">
+          <button onClick={onReset} className="button-reset-main">
+            🔄 Nova Busca
+          </button>
+          <button onClick={onReset} className="button-back">
+            ⬅️ Voltar
+          </button>
+        </div>
       )}
     </div>
   )
