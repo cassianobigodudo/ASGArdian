@@ -87,9 +87,9 @@ def route_after_verify(state: AgentState) -> str:
         return "fetch_guide_node"
 
     # approval=None E missing_item=True: item faltando, usuário não respondeu ainda
-    # PAUSA AQUI para o HITL fazer a pergunta (não deve ir a lugar nenhum)
-    # Retornar END aqui vai pausar o grafo
-    return END
+    # Retorna fetch_guide_node - o LangGraph pausará ANTES de executá-lo (interrupt_before)
+    # para que o HITL possa fazer a pergunta ao usuário
+    return "fetch_guide_node"
 
 
 def route_after_critique(state: AgentState) -> str:
