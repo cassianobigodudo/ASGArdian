@@ -364,13 +364,22 @@ def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     web_results = _search_web(search_query, num_results=5)
     
     if not web_results:
-        print(f"\n   ⚠️ Nenhum resultado de web encontrado, usando apenas conhecimento do modelo...")
-        # Fallback: usa conhecimento do modelo se web search falha
-        prompt = FETCH_GUIDE_PROMPT.format(
-            game_name=state["game_name"],
-            mission_name=state["mission_name"],
-            current_issue=state["current_issue"],
-        )
+        print(f"\n   ⚠️ Nenhum resultado de web encontrado, usando LLM com mission_name...")
+        # Fallback: usa LLM com mission_name, não current_issue
+        prompt = f"""Você é um expert em videogames e detonados. Forneça informações detalhadas sobre como progredir neste jogo.
+
+CONTEXTO DO JOGADOR:
+- Jogo: {state["game_name"]}
+- Missão/Localização: {state["mission_name"]}
+
+TAREFA:
+Forneça informações DETALHADAS e ESPECÍFICAS sobre como completar esta missão/localização, incluindo:
+1. Pré-requisitos (itens, habilidades)
+2. Passo a passo técnico
+3. Potenciais spoilers de enredo que vem DEPOIS
+4. Dicas práticas
+
+Seja específico e detalhado."""
         try:
             raw_result = _invoke_llm(prompt)
             print(f"   ✅ LLM retornou (fallback): {len(raw_result)} caracteres")
@@ -391,13 +400,12 @@ def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
         
         print(f"   Enviando {len(web_results)} resultados para síntese...")
         
-        synthesis_prompt = f"""Você recebeu resultados de busca web sobre um problema de videogame. 
+        synthesis_prompt = f"""Você recebeu resultados de busca web sobre um detonado de videogame. 
 Sintetize as informações em uma resposta completa e útil.
 
 CONTEXTO DO JOGADOR:
 - Jogo: {state['game_name']}
 - Missão/Localização: {state['mission_name']}
-- Problema/Desafio Atual: {state['current_issue']}
 
 RESULTADOS DA BUSCA WEB:
 ---
