@@ -10,27 +10,32 @@ ANALYZE_PROBLEM_PROMPT = """Você é um especialista em analisar dúvidas de jog
 
 CONTEXTO:
 - Jogo: {game_name}
+- Nome da Missão: {mission_name}
 - Texto do problema do usuário: {user_problem_text}
 
 TAREFA:
-Analise o texto do problema e extraia:
-1. A missão/localização/desafio específico que o usuário está enfrentando
-2. Crie uma query de busca otimizada para encontrar guias/detonados relevantes
+Analise o texto do problema e crie uma query de busca otimizada.
+
+PRIORIDADE:
+1. USE o nome da missão fornecido ({mission_name}) como base
+2. Se o texto do problema adicionar detalhes específicos sobre o desafio, INCORPORE-OS junto à missão
+3. Nunca IGNORE o nome da missão fornecido
 
 FORMATO DE RESPOSTA (EXATAMENTE):
-MISSION: [nome da missão/dúvida extraída do contexto]
-SEARCH_QUERY: {game_name} [nome da missão] guide walkthrough
+MISSION: {mission_name}
+SEARCH_QUERY: {game_name} {mission_name} guide walkthrough
 
 EXEMPLO:
-Se o usuário disser: "Estou travado no Zelda Breath of the Wild, não consigo encontrar as primeiras shrines no Great Plateau, já procurei em vários lugares mas não acho"
+Se Mission={mission_name} = "Great Plateau" e o usuário disser: "Estou travado, não consigo encontrar as primeiras shrines"
 Você deve retornar:
-MISSION: Finding the first Shrines on the Great Plateau
-SEARCH_QUERY: The Legend of Zelda: Breath of the Wild Finding the first Shrines on the Great Plateau guide walkthrough
+MISSION: Great Plateau
+SEARCH_QUERY: {game_name} Great Plateau guide walkthrough
 
 ⚠️ IMPORTANTE:
-- A query DEVE começar com o nome do jogo exatamente como fornecido
+- SEMPRE use o mission_name fornecido como MISSION
+- A query DEVE começar com {game_name}
 - A query DEVE terminar com "guide walkthrough"
-- A missão deve ser clara e específica, extraída do contexto do problema
+- Incorpore detalhes do problema apenas se forem MUITO específicos
 - Responda APENAS com MISSION e SEARCH_QUERY, nada mais"""
 
 

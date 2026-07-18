@@ -243,8 +243,10 @@ def analyze_problem_node(state: AgentState) -> Dict[str, Any]:
     """
     Analisa o texto completo do problema fornecido pelo usuário.
     
+    PRIORIZA o mission_name fornecido como base para a análise.
+    
     Extrai:
-    - A missão/dúvida específica do contexto
+    - A missão (sempre usa mission_name fornecido)
     - Cria uma query otimizada para busca: "[game] [mission] guide walkthrough"
     - Preserva o contexto original para comparação posterior
     
@@ -258,25 +260,29 @@ def analyze_problem_node(state: AgentState) -> Dict[str, Any]:
     print(f"{'='*80}")
     print(f"📥 INPUT DO NÓ:")
     print(f"   game_name: {state['game_name']}")
+    print(f"   mission_name: {state['mission_name']}")
     print(f"   user_problem_text: {state.get('user_problem_text', '')[:100]}...")
     
     logger.debug(f"🔎 analyze_problem_node iniciado")
     logger.debug(f"   - game_name: {state['game_name']}")
+    logger.debug(f"   - mission_name: {state['mission_name']}")
     logger.debug(f"   - user_problem_text length: {len(state.get('user_problem_text', ''))}")
     
     user_problem = state.get("user_problem_text", state.get("current_issue", ""))
+    mission_name = state.get("mission_name", "Unknown Mission")
     
     if not user_problem or not user_problem.strip():
-        print(f"   ⚠️ Nenhum texto de problema fornecido, usando current_issue como fallback")
-        analyzed_mission = state.get("mission_name", "Unknown Mission")
-        search_query = f"{state['game_name']} {analyzed_mission} guide walkthrough"
+        print(f"   ⚠️ Nenhum texto de problema fornecido, usando mission_name como base")
+        analyzed_mission = mission_name
+        search_query = f"{state['game_name']} {mission_name} guide walkthrough"
     else:
         prompt = ANALYZE_PROBLEM_PROMPT.format(
             game_name=state["game_name"],
+            mission_name=mission_name,
             user_problem_text=user_problem,
         )
         
-        print(f"   Analisando problema com LLM...")
+        print(f"   Analisando problema com LLM (priorizando mission_name)...")
         
         try:
             response = _invoke_llm(prompt)
@@ -289,16 +295,24 @@ def analyze_problem_node(state: AgentState) -> Dict[str, Any]:
                 f"Falha ao analisar problema. Detalhe: {exc}"
             ) from exc
         
-        # Extrai MISSION
+        # Extrai MISSION - PRIORIZA mission_name fornecido
         mission_match = re.search(r"MISSION:\s*(.+?)(?:\n|$)", response, re.IGNORECASE)
-        analyzed_mission = mission_match.group(1).strip() if mission_match else state.get("mission_name", "Unknown")
+        analyzed_mission_raw = mission_match.group(1).strip() if mission_match else mission_name
+        
+        # Se a LLM retornou algo diferente, usa o fornecido (prioriza)
+        # Mas se retornou o mesmo ou similar, mantém
+        if analyzed_mission_raw.lower() != mission_name.lower():
+            print(f"   ℹ️ LLM sugeriu diferente, mantendo mission_name fornecido")
+            analyzed_mission = mission_name
+        else:
+            analyzed_mission = analyzed_mission_raw
         
         # Extrai SEARCH_QUERY
         query_match = re.search(r"SEARCH_QUERY:\s*(.+?)(?:\n|$)", response, re.IGNORECASE)
-        search_query = query_match.group(1).strip() if query_match else f"{state['game_name']} {analyzed_mission} guide walkthrough"
+        search_query = query_match.group(1).strip() if query_match else f"{state['game_name']} {mission_name} guide walkthrough"
         
         print(f"\n   📋 EXTRAÇÃO:")
-        print(f"   Mission: {analyzed_mission}")
+        print(f"   Mission (prioritizada): {analyzed_mission}")
         print(f"   Search Query: {search_query}")
     
     print(f"\n📤 OUTPUT DO NÓ:")
@@ -309,7 +323,7 @@ def analyze_problem_node(state: AgentState) -> Dict[str, Any]:
     return {
         "analyzed_mission": analyzed_mission,
         "search_query": search_query,
-        "mission_name": analyzed_mission,  # Atualiza mission_name com a análise
+        "mission_name": analyzed_mission,  # Atualiza mission_name com a análise (mas priorizando o fornecido)
     }
 
 
