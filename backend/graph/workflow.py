@@ -3,13 +3,15 @@
 workflow.py -- Montagem e compilacao do StateGraph do ASGArdian.
 
 Responsabilidades deste modulo:
-- Registrar os 5 nos no grafo
+- Registrar os 6 nos no grafo (incluindo analyze_problem_node)
 - Definir todas as arestas (fixas e condicionais)
-- Compilar com MemorySaver e interrupt_before para o HITL
+- Compilar com MemorySaver
 - Exportar `app` como ponto de entrada unico para o main.py
 
 Topologia:
     START
+      |
+    analyze_problem_node (NOVO - extrai mission e search_query)
       |
     fetch_guide_node
       |
@@ -38,6 +40,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from backend.graph.state import AgentState
 from backend.graph.nodes import (
+    analyze_problem_node,
     fetch_guide_node,
     process_guide_node,
     verify_requirements_node,
@@ -65,21 +68,27 @@ def route_after_verify(state: AgentState) -> str:
     Apos verify_requirements_node:
     - Se nao ha item faltando: avanca para gerar a ajuda
     - Se user_approval="nao": encerra o fluxo (jogador recusou a busca)
-    - Se ha item faltando e sem aprovacao: prepara o estado HITL e vai para fetch
-      (o grafo pausara em interrupt_before=["fetch_guide_node"])
+    - Se user_approval="sim": vai para fetch_guide_node (segunda busca)
+    - Se user_approval=None (não foi dado): PAUSA HITL (retorna END para pausar)
     """
     missing = state.get("missing_item")
     approval = state.get("user_approval")
 
     if not missing:
+        # Sem item faltando: segue para gerar ajuda
         return "generate_help_node"
 
     if approval == "nao":
+        # Usuário recusou busca pelo item
         return END
 
-    # missing_item existe e user_approval nao foi dado ainda (ou foi "sim")
-    # Redireciona para fetch -- o HITL vai pausar antes se user_approval=None
-    return "fetch_guide_node"
+    if approval == "sim":
+        # Usuário aprovou: vai buscar o item
+        return "fetch_guide_node"
+
+    # approval=None: item faltando MAS usuário não respondeu ainda
+    # PAUSA AQUI para o HITL fazer a pergunta
+    return END
 
 
 def route_after_critique(state: AgentState) -> str:
@@ -104,7 +113,8 @@ def build_workflow() -> StateGraph:
     """
     workflow = StateGraph(AgentState)
 
-    # --- Registro dos 5 nos ---
+    # --- Registro dos 6 nos ---
+    workflow.add_node("analyze_problem_node", analyze_problem_node)
     workflow.add_node("fetch_guide_node", fetch_guide_node)
     workflow.add_node("process_guide_node", process_guide_node)
     workflow.add_node("verify_requirements_node", verify_requirements_node)
@@ -112,9 +122,10 @@ def build_workflow() -> StateGraph:
     workflow.add_node("critique_spoiler_node", critique_spoiler_node)
 
     # --- Ponto de entrada ---
-    workflow.set_entry_point("fetch_guide_node")
+    workflow.set_entry_point("analyze_problem_node")
 
     # --- Arestas fixas ---
+    workflow.add_edge("analyze_problem_node", "fetch_guide_node")
     workflow.add_edge("fetch_guide_node", "process_guide_node")
     workflow.add_edge("generate_help_node", "critique_spoiler_node")
 
@@ -160,19 +171,15 @@ def build_workflow() -> StateGraph:
 
 def compile_app():
     """
-    Compila o workflow com persistencia de memoria e interrupt_before para HITL.
-
-    interrupt_before=["fetch_guide_node"]: o grafo pausa antes de fetch sempre
-    que for reiniciado apos o verify detectar um missing_item.
-    O main.py e responsavel por checar se a pausa e necessaria (user_approval=None)
-    e por injetar o user_approval antes de retomar.
+    Compila o workflow com persistencia de memoria.
+    
+    NOTA: Removemos interrupt_before pois a pausa HITL é controlada manualmente
+    no api.py. O interrupt_before pausaria ANTES de fetch_guide_node SEMPRE,
+    impedindo a primeira execução.
     """
     memory = MemorySaver()
     workflow = build_workflow()
-    app = workflow.compile(
-        checkpointer=memory,
-        interrupt_before=["fetch_guide_node"],
-    )
+    app = workflow.compile(checkpointer=memory)
     return app
 
 
