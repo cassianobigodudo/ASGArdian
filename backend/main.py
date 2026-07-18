@@ -86,6 +86,9 @@ def build_initial_state(data: Dict[str, Any]) -> AgentState:
     Constroi o AgentState inicial a partir do payload validado.
     Preenche todos os campos intermediarios com valores padrao seguros.
     """
+    # Extrai o texto do problema se fornecido, caso contrário usa current_issue
+    user_problem_text = data.get("user_problem_text", data.get("current_issue", ""))
+    
     return AgentState(
         game_name=data["game_name"],
         mission_name=data["mission_name"],
@@ -93,6 +96,9 @@ def build_initial_state(data: Dict[str, Any]) -> AgentState:
         original_issue=data["current_issue"],   # preserva o contexto original
         help_type=data["help_type"],
         player_inventory=data["player_inventory"],
+        user_problem_text=user_problem_text,    # Novo: texto completo do problema
+        analyzed_mission="",                     # Novo: missão extraída
+        search_query="",                         # Novo: query otimizada
         raw_search_result="",
         required_requirements=[],
         missing_item=None,
@@ -101,6 +107,7 @@ def build_initial_state(data: Dict[str, Any]) -> AgentState:
         generated_text="",
         critique_passed=False,
         final_response="",
+        hitl_question="",
     )
 
 
