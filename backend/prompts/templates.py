@@ -6,38 +6,96 @@ Cada template usa format() com campos nomeados do AgentState.
 """
 
 
-FETCH_GUIDE_PROMPT = """Você é um assistente de busca especializado em detonados de videogames.
+ANALYZE_PROBLEM_PROMPT = """Você é um especialista em analisar dúvidas de jogadores de videogame.
 
-Dado o seguinte contexto de jogo:
+CONTEXTO:
+- Jogo: {game_name}
+- Texto do problema do usuário: {user_problem_text}
+
+TAREFA:
+Analise o texto do problema e extraia:
+1. A missão/localização/desafio específico que o usuário está enfrentando
+2. Crie uma query de busca otimizada para encontrar guias/detonados relevantes
+
+FORMATO DE RESPOSTA (EXATAMENTE):
+MISSION: [nome da missão/dúvida extraída do contexto]
+SEARCH_QUERY: {game_name} [nome da missão] guide walkthrough
+
+EXEMPLO:
+Se o usuário disser: "Estou travado no Zelda Breath of the Wild, não consigo encontrar as primeiras shrines no Great Plateau, já procurei em vários lugares mas não acho"
+Você deve retornar:
+MISSION: Finding the first Shrines on the Great Plateau
+SEARCH_QUERY: The Legend of Zelda: Breath of the Wild Finding the first Shrines on the Great Plateau guide walkthrough
+
+⚠️ IMPORTANTE:
+- A query DEVE começar com o nome do jogo exatamente como fornecido
+- A query DEVE terminar com "guide walkthrough"
+- A missão deve ser clara e específica, extraída do contexto do problema
+- Responda APENAS com MISSION e SEARCH_QUERY, nada mais"""
+
+
+FETCH_GUIDE_PROMPT = """Você é um expert em videogames e detonados. Sua tarefa é fornecer informações detalhadas sobre como progredir em um jogo quando o jogador está travado.
+
+CONTEXTO DO JOGADOR:
 - Jogo: {game_name}
 - Missão/Localização: {mission_name}
-- Problema/Objetivo atual: {current_issue}
+- Problema/Desafio Atual: {current_issue}
 
-Use a ferramenta de busca do Google para encontrar guias, detonados ou walkthroughs
-que abordem especificamente este ponto do jogo. Retorne o conteúdo bruto encontrado,
-incluindo qualquer informação de pré-requisitos, itens necessários e passos da solução.
+INSTRUÇÕES CRÍTICAS:
+1. Forneça informações DETALHADAS e ESPECÍFICAS sobre como resolver este desafio
+2. Inclua pré-requisitos (itens, habilidades, níveis) necessários
+3. Descreva o passo a passo técnico para resolver
+4. Mencione potenciais spoilers de enredo/historia que vem DEPOIS deste ponto
+5. Use seu conhecimento completo sobre o jogo para dar uma resposta útil e prática
 
-Não filtre nem resuma o conteúdo. Retorne tudo que encontrar para análise posterior."""
+FORMATO DE RESPOSTA:
+Forneça uma resposta completa com:
+- Análise do problema
+- Pré-requisitos necessários
+- Passos detalhados
+- Possíveis consequências narrativas futuras
+- Dicas práticas
+
+Seja específico, detalhado e útil."""
 
 
-PROCESS_GUIDE_PROMPT = """Você é um analista de conteúdo de jogos especializado em separar mecânicas de gameplay de informações narrativas.
+PROCESS_GUIDE_PROMPT = """Você é um analista especializado em extrair informações estruturadas de guias de videogames.
 
-Analise o seguinte conteúdo bruto de detonado:
+CONTEÚDO DO DETONADO:
 ---
 {raw_search_result}
 ---
 
-Contexto atual do jogador:
-- Jogo: {game_name}
-- Objetivo atual: {current_issue}
+TAREFA:
+Analise o conteúdo acima e extraia EXATAMENTE as seguintes informações no formato especificado:
 
-Extraia e retorne OBRIGATORIAMENTE no seguinte formato estruturado:
+1. PREREQUISITOS (APENAS items/skills CRÍTICOS necessários para COMPLETAR a missão - separados por vírgula)
+   ⚠️ IMPORTANTE: Inclua APENAS itens/habilidades que são OBRIGATÓRIOS e CHAVE para resolver o desafio
+   ❌ NÃO inclua: munição comum, itens opcionais, armas alternativas, buffs auxiliares
+   ✅ INCLUA: chaves específicas, habilidades especiais necessárias, itens únicos obrigatórios
+   Se não houver itens críticos: escreva "nenhum"
+   Exemplo: "Chave Vermelha, Acesso Nível 5" (NÃO "munição, armadura, pistola")
 
-PREREQUISITOS: [lista separada por vírgulas de itens, habilidades ou condições necessárias. Se não houver, escreva: nenhum]
-PASSOS: [sequência numerada de ações mecânicas para resolver o problema atual]
-SPOILERS_FUTUROS: [qualquer informação narrativa que ocorre APÓS a resolução deste ponto. Se não houver, escreva: nenhum]
+2. PASSOS (lista numerada de ações mecânicas para resolver o desafio atual)
+   Seja específico e prático
+   Exemplo: 
+   1. Localize o painel de controle no canto sudeste
+   2. Use a chave vermelha no slot A
+   3. Aguarde 5 segundos para o sistema reiniciar
 
-Seja preciso. Qualquer informação de enredo que ocorra depois deste ponto do jogo deve ir para SPOILERS_FUTUROS, não para PASSOS."""
+3. SPOILERS_FUTUROS (APENAS informações que revelam enredo/personagens/plot twists que vêm DEPOIS)
+   - Mencione APENAS se há morte de personagens principais, reviravoltas de enredo, ou revelações que mudam tudo
+   - NÃO inclua: simples descrições do cenário, mecânicas do jogo, dicas óbvias
+   - Se não houver spoilers significativos: escreva "nenhum"
+   Exemplos de VERDADEIROS spoilers:
+   - "Um personagem importante morre nesta fase"
+   - "O vilão não é quem parecia"
+   - "O final leva a uma área completamente inesperada"
+
+FORMATO DE SAÍDA OBRIGATÓRIO:
+PREREQUISITOS: [aqui APENAS items críticos, ou "nenhum"]
+PASSOS: [aqui os passos numerados]
+SPOILERS_FUTUROS: [aqui APENAS spoilers significativos, ou "nenhum"]"""
 
 
 VERIFY_REQUIREMENTS_PROMPT = """Você é um verificador lógico de requisitos de jogo.
@@ -73,7 +131,7 @@ Gere uma DICA SUTIL que:
 
 {critique_feedback}
 
-Termine com: "[Nenhum spoiler de enredo foi incluído nesta resposta.]" """
+Responda apenas com a dica, sem explicações adicionais."""
 
 
 GENERATE_ANSWER_PROMPT = """Você é um guia direto de gameplay. Seu objetivo é resolver o problema do jogador com clareza.
@@ -91,10 +149,10 @@ Gere uma SOLUÇÃO DIRETA que:
 
 {critique_feedback}
 
-Termine com: "[Nenhum spoiler de enredo foi incluído nesta resposta.]" """
+Responda apenas com a solução, sem explicações adicionais."""
 
 
-CRITIQUE_SPOILER_PROMPT = """Você é um auditor especializado em detecção de spoilers de videogames.
+CRITIQUE_SPOILER_PROMPT = """Você é um auditor especializado em detecção de SPOILERS SIGNIFICATIVOS de videogames.
 
 Conteúdo de referência com SPOILERS FUTUROS identificados (NÃO podem aparecer na resposta):
 {future_spoilers}
@@ -104,12 +162,33 @@ Resposta gerada pelo assistente para revisão:
 {generated_text}
 ---
 
-Analise CRITICAMENTE se a resposta acima contém, direta ou indiretamente, qualquer
-informação presente na lista de spoilers futuros.
+TAREFA CRÍTICA: Analise se a resposta contém SPOILERS SIGNIFICATIVOS (não triviais).
 
-Se a resposta estiver limpa de spoilers, retorne exatamente: CRITIQUE_RESULT: PASSED
-Se encontrar vazamento de spoiler, retorne:
+DEFINIÇÃO DE SPOILER SIGNIFICATIVO:
+✅ SIM, é spoiler se menciona EXATAMENTE:
+   - Nomes de personagens principais que morrem/traem
+   - Reviravoltas narrativas majores (plot twists)
+   - Finais de missões ou campanhas
+   - Revelações de enredo que mudam tudo
+   - Locais/áreas específicas que vêm depois
+
+❌ NÃO é spoiler se menciona:
+   - Mecânicas gerais do jogo ("use explosivos", "pressione botões")
+   - Dicas óbvias ("procure pistas", "explore a área")
+   - Informações que o próprio jogo mostra no tutorial
+   - Descrições de ações físicas ("suba a escada")
+   - Contexto básico que pode ser inferido do enredo atual
+
+ANÁLISE FINAL:
+1. A resposta realmente menciona nomes/eventos específicos da lista de spoilers?
+2. Ou é apenas orientação prática/mecânica genérica?
+3. Em caso de dúvida ou resposta ambígua: APROVA (presuma inocência)
+
+Se a resposta estiver LIMPA (sem spoilers significativos), retorne exatamente:
+CRITIQUE_RESULT: PASSED
+
+Se encontrar SPOILERS SIGNIFICATIVOS explícitos, retorne:
 CRITIQUE_RESULT: FAILED
-REASON: <descrição exata do spoiler identificado e como reescrever para removê-lo>
+REASON: <descrição exata do spoiler e como reescrever>
 
-Seja rigoroso. Em caso de dúvida, marque como FAILED."""
+Seja rigoroso APENAS com spoilers claros e explícitos."""
