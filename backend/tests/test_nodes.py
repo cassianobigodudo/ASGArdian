@@ -29,10 +29,24 @@ from backend.graph.nodes import (
     critique_spoiler_node,
 )
 
+# Importa o módulo nodes para resetar o contador global
+import backend.graph.nodes as nodes_module
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def reset_execution_counters():
+    """Reseta os contadores de execução antes de cada teste."""
+    nodes_module._node_execution_count = {}
+    nodes_module._total_execution_time_start = None
+    yield
+    # Limpeza após teste
+    nodes_module._node_execution_count = {}
+    nodes_module._total_execution_time_start = None
+
 
 def make_state(**overrides) -> AgentState:
     """Cria um AgentState válido com valores padrão, aceitando overrides."""
