@@ -241,13 +241,15 @@ def _invoke_llm(prompt: str) -> str:
 
 def analyze_problem_node(state: AgentState) -> Dict[str, Any]:
     """
+    Você é um agente especializado em jogos e em formatação de texto para buscas de detonados em jogos
     Analisa o texto completo do problema fornecido pelo usuário.
     
-    PRIORIZA o mission_name fornecido como base para a análise.
+    REGRAS:PRIORIZA o mission_name fornecido como base para a análise.
+    a query SEMPRE tem que ser a mesma que está formatada, não pesquise nada além do formato da query fornecida
     
     Extrai:
     - A missão (sempre usa mission_name fornecido)
-    - Cria uma query otimizada para busca: "[game] [mission] guide walkthrough"
+    - Sempre executar essa query para busca: "[game] [mission] guide walkthrough"
     - Preserva o contexto original para comparação posterior
     
     Retorna: analyzed_mission e search_query preenchidos.
@@ -331,10 +333,10 @@ def analyze_problem_node(state: AgentState) -> Dict[str, Any]:
 
 def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     """
-    Busca detonados NA WEB usando DuckDuckGo com a query otimizada do analyze_problem_node.
-
-    Na primeira passagem: usa search_query gerada pela análise do problema.
-    Na segunda passagem (is_item_search=True): busca como obter o missing_item.
+    Busca detonados NA WEB usando DuckDuckGo com query simples.
+    
+    Query gerada automaticamente: "[game_name] [mission_name] guide walkthrough"
+    Sem análise de problema - direto para a busca.
 
     Retorna: raw_search_result populado com conteúdo sintetizado + links em ---FONTES---.
     """
@@ -348,21 +350,15 @@ def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     print(f"   game_name: {state['game_name']}")
     print(f"   mission_name: {state['mission_name']}")
     print(f"   current_issue: {state['current_issue']}")
-    print(f"   search_query: {state.get('search_query', 'N/A')}")
     print(f"   is_item_search: {state.get('is_item_search', False)}")
     
     logger.debug(f"🔍 fetch_guide_node iniciado (WEB SEARCH)")
     logger.debug(f"   - game_name: {state['game_name']}")
-    logger.debug(f"   - search_query: {state.get('search_query', 'N/A')}")
+    logger.debug(f"   - mission_name: {state['mission_name']}")
     
-    # ETAPA 1: Busca na web
-    print(f"\n📡 ETAPA 1: BUSCA WEB")
-    
-    # Usa search_query se disponível, caso contrário cria uma
-    search_query = state.get("search_query")
-    if not search_query:
-        search_query = f"{state['game_name']} {state['current_issue']} guide walkthrough"
-    
+    # ETAPA 1: Gera search_query automática
+    print(f"\n📡 ETAPA 1: GERACAO DE SEARCH_QUERY")
+    search_query = f"{state['game_name']} {state['mission_name']} guide walkthrough"
     print(f"   Query: {search_query}")
     
     web_results = _search_web(search_query, num_results=5)

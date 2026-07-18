@@ -40,7 +40,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from backend.graph.state import AgentState
 from backend.graph.nodes import (
-    analyze_problem_node,
+    # analyze_problem_node,  # DESATIVADO
     fetch_guide_node,
     process_guide_node,
     verify_requirements_node,
@@ -118,11 +118,14 @@ def build_workflow() -> StateGraph:
     """
     Constroi e retorna o StateGraph completo do ASGArdian.
     Nao compila -- permite testes de estrutura sem MemorySaver.
+    
+    NOTA: analyze_problem_node foi desativado. A search_query é gerada
+    diretamente no fetch_guide_node usando: [game] [mission] guide walkthrough
     """
     workflow = StateGraph(AgentState)
 
-    # --- Registro dos 6 nos ---
-    workflow.add_node("analyze_problem_node", analyze_problem_node)
+    # --- Registro dos 5 nos (analyze_problem_node DESATIVADO) ---
+    # workflow.add_node("analyze_problem_node", analyze_problem_node)
     workflow.add_node("fetch_guide_node", fetch_guide_node)
     workflow.add_node("process_guide_node", process_guide_node)
     workflow.add_node("verify_requirements_node", verify_requirements_node)
@@ -130,10 +133,10 @@ def build_workflow() -> StateGraph:
     workflow.add_node("critique_spoiler_node", critique_spoiler_node)
 
     # --- Ponto de entrada ---
-    workflow.set_entry_point("analyze_problem_node")
+    workflow.set_entry_point("fetch_guide_node")
 
     # --- Arestas fixas ---
-    workflow.add_edge("analyze_problem_node", "fetch_guide_node")
+    # workflow.add_edge("analyze_problem_node", "fetch_guide_node")
     workflow.add_edge("fetch_guide_node", "process_guide_node")
     workflow.add_edge("generate_help_node", "critique_spoiler_node")
 
