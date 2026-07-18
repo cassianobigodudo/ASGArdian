@@ -69,7 +69,7 @@ def route_after_verify(state: AgentState) -> str:
     - Se nao ha item faltando: avanca para gerar a ajuda
     - Se user_approval="nao": encerra o fluxo (jogador recusou a busca)
     - Se user_approval="sim": vai para fetch_guide_node (segunda busca)
-    - Se user_approval=None (não foi dado): PAUSA HITL (retorna END para pausar)
+    - Se há missing_item E user_approval=None: PAUSA para HITL fazer pergunta
     """
     missing = state.get("missing_item")
     approval = state.get("user_approval")
@@ -86,19 +86,27 @@ def route_after_verify(state: AgentState) -> str:
         # Usuário aprovou: vai buscar o item
         return "fetch_guide_node"
 
-    # approval=None: item faltando MAS usuário não respondeu ainda
-    # PAUSA AQUI para o HITL fazer a pergunta
+    # approval=None E missing_item=True: item faltando, usuário não respondeu ainda
+    # PAUSA AQUI para o HITL fazer a pergunta (não deve ir a lugar nenhum)
+    # Retornar END aqui vai pausar o grafo
     return END
 
 
 def route_after_critique(state: AgentState) -> str:
     """
     Apos critique_spoiler_node:
-    - Se aprovado: encerra o fluxo com a resposta final
-    - Se reprovado: volta ao generate para reescrita sem spoilers
+    - Se critique_passed=True: ENCERRA o fluxo (retorna END)
+    - Se critique_passed=False: volta ao generate_help_node para reescrita
+    
+    IMPORTANTE: Este é o ÚLTIMO nó antes do final. Sempre retorna END ou generate_help_node.
     """
-    if state.get("critique_passed", False):
+    passed = state.get("critique_passed", False)
+    
+    if passed:
+        # Resposta aprovada: encerra o fluxo completamente
         return END
+    
+    # Resposta reprovada: volta para reescrever sem spoilers
     return "generate_help_node"
 
 

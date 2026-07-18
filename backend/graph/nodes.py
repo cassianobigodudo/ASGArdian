@@ -629,6 +629,8 @@ def generate_help_node(state: AgentState) -> Dict[str, Any]:
 
     Se critique_passed=False (reescrita), o feedback da falha é injetado no prompt
     para que o modelo corrija o problema identificado sem spoilers.
+    
+    LIMITE: Máximo 2 tentativas de reescrita antes de aceitar e seguir.
 
     Retorna: generated_text com a resposta gerada.
     """
@@ -650,12 +652,26 @@ def generate_help_node(state: AgentState) -> Dict[str, Any]:
 
     # Injeta feedback do critique se a resposta anterior falhou
     critique_feedback = ""
-    if state.get("critique_passed") is False and state.get("generated_text"):
+    rewrite_count = state.get("_rewrite_count", 0)
+    
+    if state.get("critique_passed") is False:
+        rewrite_count += 1
+        if rewrite_count >= 2:
+            # Máximo 2 tentativas, aceita e segue
+            print(f"\n   ⚠️ LIMITE DE REESCRITA ATINGIDO (2 tentativas)")
+            print(f"   Aceitando resposta como está")
+            # Marca como passou para não voltar mais
+            return {
+                "generated_text": guide_steps,
+                "critique_passed": True,
+                "_rewrite_count": rewrite_count,
+            }
+        
         critique_feedback = (
             "\n⚠️ ATENCAO — A resposta anterior foi REPROVADA por conter spoilers. "
             "Reescreva completamente sem mencionar eventos futuros do enredo."
         )
-        print(f"\n   🔄 MODO REESCRITA: Aplicando feedback do critique")
+        print(f"\n   🔄 MODO REESCRITA ({rewrite_count}/2): Aplicando feedback do critique")
 
     template = (
         GENERATE_HINT_PROMPT if state["help_type"] == "hint"
@@ -682,9 +698,13 @@ def generate_help_node(state: AgentState) -> Dict[str, Any]:
     
     print(f"\n📤 OUTPUT DO NÓ:")
     print(f"   generated_text: {len(generated)} caracteres")
+    print(f"   _rewrite_count: {rewrite_count}")
     print(f"{'='*80}\n")
 
-    return {"generated_text": generated}
+    return {
+        "generated_text": generated,
+        "_rewrite_count": rewrite_count,
+    }
 
 
 # ---------------------------------------------------------------------------

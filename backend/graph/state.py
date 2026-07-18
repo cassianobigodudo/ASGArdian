@@ -38,3 +38,6 @@ class AgentState(TypedDict):
     critique_passed: bool # True se o critique_spoiler_node aprovou a resposta
     final_response: str   # Resposta final validada e entregue ao jogador
     hitl_question: str    # Pergunta HITL para o usuário
+    
+    # --- Proteção contra loops infinitos de reescrita ---
+    _rewrite_count: int   # Contador de tentativas de reescrita (máx 2)

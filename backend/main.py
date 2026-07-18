@@ -108,6 +108,7 @@ def build_initial_state(data: Dict[str, Any]) -> AgentState:
         critique_passed=False,
         final_response="",
         hitl_question="",
+        _rewrite_count=0,                        # Novo: contador de reescritas
     )
 
 
