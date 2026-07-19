@@ -104,6 +104,7 @@ def build_initial_state(data: Dict[str, Any]) -> AgentState:
         missing_item=None,
         is_item_search=False,                   # RN05: sempre False na inicializacao
         user_approval=None,
+        is_regenerating=False,                  # Novo: regeneração não ativa por padrão
         generated_text="",
         critique_passed=False,
         final_response="",

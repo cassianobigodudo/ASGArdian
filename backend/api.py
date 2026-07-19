@@ -440,6 +440,67 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Endpoint para Regenerar Dica
+# ---------------------------------------------------------------------------
+
+@app.post("/api/regenerate-hint")
+async def regenerate_hint_endpoint(data: Dict[str, Any] = Body(...)):
+    """
+    Regenera uma nova dica/resposta usando o mesmo payload.
+    Não refaz a busca web - apenas gera nova resposta baseada no mesmo guia.
+    """
+    thread_id = data.get("thread_id")
+    
+    if not thread_id:
+        raise HTTPException(status_code=400, detail="thread_id é obrigatório")
+    
+    logger.info(f"[Backend] [REGENERATE] Solicitação para regenerar dica: {thread_id}")
+    
+    config = {"configurable": {"thread_id": thread_id}}
+    
+    try:
+        # Obtém estado atual
+        snapshot = graph_app.get_state(config)
+        if not snapshot or not snapshot.values:
+            raise HTTPException(status_code=404, detail="Sessão não encontrada")
+        
+        current_state = snapshot.values
+        logger.info(f"[Backend] [REGENERATE] Estado atual obtido")
+        
+        # Atualiza para modo regeneração
+        # Reset critique_passed e final_response para forçar nova geração
+        graph_app.update_state(
+            config,
+            {
+                "is_regenerating": True,
+                "critique_passed": False,
+                "generated_text": "",  # Limpa texto anterior
+                "final_response": "",  # Limpa resposta anterior
+                "_rewrite_count": 0,   # Reset contador de reescrita
+            },
+        )
+        logger.info(f"[Backend] [REGENERATE] Modo regeneração ativado")
+        
+        # Retoma do ponto de fetch (que ainda tem os dados)
+        # O roteador detectará is_regenerating=True e pulará para generate_help_node
+        result = graph_app.invoke(None, config=config)
+        logger.info(f"[Backend] [REGENERATE] Grafo executado para nova dica")
+        
+        # Retorna resposta regenerada
+        return {
+            "status": "success",
+            "generated_text": result.get("generated_text", ""),
+            "final_response": result.get("final_response", ""),
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Backend] [REGENERATE] Erro: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao regenerar: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
 # Servidor
 # ---------------------------------------------------------------------------
 

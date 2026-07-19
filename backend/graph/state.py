@@ -32,6 +32,7 @@ class AgentState(TypedDict):
     # --- Controle de fluxo e HITL ---
     is_item_search: bool         # RN05: True na 2ª passagem — ignora verify para evitar loop
     user_approval: Optional[str] # Resposta HITL: "sim", "nao" ou None (aguardando)
+    is_regenerating: bool        # Flag para "Gerar Nova Dica" - pula diretamente para generate_help_node
 
     # --- Resposta gerada e validada ---
     generated_text: str   # Resposta temporária gerada pelo generate_help_node

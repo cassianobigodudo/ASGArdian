@@ -55,9 +55,12 @@ from backend.graph.nodes import (
 def route_after_process(state: AgentState) -> str:
     """
     Apos process_guide_node:
-    - RN05: se is_item_search=True, pula o verify para evitar loop infinito
+    - Se is_regenerating=True: pula direto para generate_help_node (nova dica)
+    - Se is_item_search=True: pula o verify para evitar loop infinito
     - Caso contrario, segue o fluxo normal de verificacao de requisitos
     """
+    if state.get("is_regenerating", False):
+        return "generate_help_node"
     if state.get("is_item_search", False):
         return "generate_help_node"
     return "verify_requirements_node"
