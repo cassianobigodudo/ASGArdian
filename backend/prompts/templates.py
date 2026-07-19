@@ -74,12 +74,16 @@ CONTEÚDO DO DETONADO:
 TAREFA:
 Analise o conteúdo acima e extraia EXATAMENTE as seguintes informações no formato especificado:
 
-1. PREREQUISITOS (APENAS items/skills CRÍTICOS necessários para COMPLETAR a missão - separados por vírgula)
-   ⚠️ IMPORTANTE: Inclua APENAS itens/habilidades que são OBRIGATÓRIOS e CHAVE para resolver o desafio
-   ❌ NÃO inclua: munição comum, itens opcionais, armas alternativas, buffs auxiliares
-   ✅ INCLUA: chaves específicas, habilidades especiais necessárias, itens únicos obrigatórios
-   Se não houver itens críticos: escreva "nenhum"
-   Exemplo: "Chave Vermelha, Acesso Nível 5" (NÃO "munição, armadura, pistola")
+1. PREREQUISITOS (APENAS items/skills CRÍTICOS e OBRIGATÓRIOS para COMPLETAR a missão - separados por vírgula)
+   ⚠️ EXTREMAMENTE IMPORTANTE: 
+   - Inclua APENAS itens que são ABSOLUTAMENTE NECESSÁRIOS para resolver o desafio específico
+   - Um item crítico é algo que você NÃO CONSEGUE COMPLETAR a missão sem ter
+   - Exemplos de items CRÍTICOS: "Explosivo Especial", "Chave do Cofre", "Equipamento de Mergulho", "Acesso de Segurança Nível 5"
+   - Exemplos de items NÃO CRÍTICOS (EXCLUA): "munição comum", "pistola padrão", "escudo normal", "armadura básica", "silenciador"
+   ❌ NÃO inclua: munição, armas alternativas, buffs auxiliares, equipamento de suporte, itens opcionais
+   ✅ INCLUA APENAS: Itens únicos obrigatórios, ferramentas especiais necessárias, habilidades especiais exigidas
+   Se não houver itens críticos absolutamente necessários: escreva "nenhum"
+   Exemplo correto: "Chave Vermelha, Acesso Nível 5" (NÃO "munição, armadura, pistola, silenciador")
 
 2. PASSOS (lista numerada de ações mecânicas para resolver o desafio atual)
    Seja específico e prático
@@ -98,24 +102,33 @@ Analise o conteúdo acima e extraia EXATAMENTE as seguintes informações no for
    - "O final leva a uma área completamente inesperada"
 
 FORMATO DE SAÍDA OBRIGATÓRIO:
-PREREQUISITOS: [aqui APENAS items críticos, ou "nenhum"]
+PREREQUISITOS: [aqui APENAS items ABSOLUTAMENTE CRÍTICOS, ou "nenhum"]
 PASSOS: [aqui os passos numerados]
 SPOILERS_FUTUROS: [aqui APENAS spoilers significativos, ou "nenhum"]"""
 
 
-VERIFY_REQUIREMENTS_PROMPT = """Você é um verificador lógico de requisitos de jogo.
+VERIFY_REQUIREMENTS_PROMPT = """Você é um verificador rigoroso de requisitos críticos de jogo.
 
-Pré-requisitos necessários para resolver o problema:
+⚠️ SUA TAREFA É IMPORTANTÍSSIMA: Identificar APENAS itens absolutamente críticos que faltam.
+
+Itens CRÍTICOS exigidos para resolver o desafio:
 {required_requirements}
 
 Inventário atual do jogador:
 {player_inventory}
 
+REGRA CRÍTICA DE VERIFICAÇÃO:
+1. Um item está FALTANDO se o jogador NÃO O TEM no inventário
+2. Um item está PRESENTE se o jogador O TEM no inventário (mesmo que com nome levemente diferente)
+3. Se o inventário está VAZIO: ASSUMA QUE O JOGADOR TEM TUDO (ignore a verificação e retorne "none")
+4. APENAS if inventário NÃO está vazio E falta algo crítico: retorne o item que falta
+
 Analise semanticamente (não apenas por correspondência exata de texto) se o jogador
 possui os itens/habilidades/condições listadas nos pré-requisitos.
 
-Se TODOS os pré-requisitos estiverem satisfeitos, retorne: MISSING_ITEM: none
-Se algum pré-requisito estiver ausente, retorne: MISSING_ITEM: <nome do item mais crítico faltante>
+RETORNO OBRIGATÓRIO:
+Se TODOS os pré-requisitos estão satisfeitos OU inventário está vazio: MISSING_ITEM: none
+Se algum pré-requisito absolutamente crítico está ausente: MISSING_ITEM: <nome do item mais crítico faltante>
 
 Retorne apenas esta linha, sem explicações adicionais."""
 

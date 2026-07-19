@@ -230,7 +230,8 @@ class TestWorkflowIntegration:
         # Compila SEM interrupt para a primeira passagem completa
         app_no_interrupt = workflow.compile(checkpointer=memory)
 
-        initial_state = make_state(player_inventory=[])
+        # FIX: Usar inventário NÃO VAZIO (mas sem a chave necessária)
+        initial_state = make_state(player_inventory=["Shotgun", "Shield"])
         config = {"configurable": {"thread_id": "test-hitl-pause"}}
 
         # Primeira execução completa: fetch -> process -> verify (detecta missing)
@@ -271,7 +272,8 @@ class TestWorkflowIntegration:
             interrupt_before=["fetch_guide_node"],
         )
 
-        initial_state = make_state(player_inventory=[])
+        # FIX: Usar inventário NÃO VAZIO (mas sem a chave necessária)
+        initial_state = make_state(player_inventory=["Munição", "Escudo"])
         config = {"configurable": {"thread_id": "test-hitl-nao"}}
 
         # Primeira execução: pausa no HITL

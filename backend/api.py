@@ -217,22 +217,77 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
                 
                 # Verifica se há HITL pendente (missing_item detectado, mas user_approval não foi dado)
                 if result.get("missing_item") and result.get("user_approval") is None:
-                    logger.info(f"[Backend] ⏸️  HITL PAUSED: Item faltando '{result['missing_item']}'")
+                    logger.info(f"[Backend] [PAUSA HITL] Item faltando: '{result['missing_item']}'")
                     missing_item = result["missing_item"]
                     
                     # Envia pergunta HITL ao cliente
                     await manager.send_event(thread_id, "hitl_question", {
                         "message": f"Você não possui: '{missing_item}'.\n\nDeseja saber como obter este item?",
                         "missing_item": missing_item,
-                        "options": ["sim", "não"]
+                        "options": ["sim", "nao"]
                     })
                     
-                    logger.info(f"[Backend] ⏳ Aguardando resposta HITL do cliente para: {missing_item}")
+                    logger.info(f"[Backend] [AGUARDANDO] Resposta HITL do cliente para: {missing_item}")
+                    logger.info(f"[Backend] [CONEXÃO] Mantendo WebSocket aberto para resposta...")
                     
-                    # Aguarda resposta do cliente (não desconecta ainda)
-                    # A resposta chegará via novo evento WebSocket
-                    await manager.disconnect(thread_id)
-                    return
+                    # NÃO desconecta! Aguarda resposta do cliente
+                    # O cliente enviará uma mensagem tipo: {"type": "hitl_response", "approval": "sim" ou "nao"}
+                    # A resposta será processada no try/except que aguarda mensagens WebSocket
+                    try:
+                        while True:
+                            logger.info(f"[Backend] [AGUARDANDO] Mensagem do cliente...")
+                            response_data = await websocket.receive_json()
+                            logger.info(f"[Backend] [RECEBIDO] Resposta HITL: {response_data}")
+                            
+                            if response_data.get("type") == "hitl_response":
+                                approval = response_data.get("approval", "").lower()
+                                
+                                if approval not in ("sim", "nao"):
+                                    logger.warning(f"[Backend] [INVALID] Resposta inválida: {approval}")
+                                    await manager.send_event(thread_id, "error", {
+                                        "message": "Resposta inválida. Por favor, escolha 'sim' ou 'nao'."
+                                    })
+                                    continue
+                                
+                                logger.info(f"[Backend] [APROVAÇÃO] Usuário respondeu: {approval}")
+                                
+                                # Atualiza estado com resposta do usuário
+                                if approval == "sim":
+                                    logger.info(f"[Backend] [UPDATE] Setando user_approval='sim' e is_item_search=True")
+                                    graph_app.update_state(
+                                        config,
+                                        {
+                                            "user_approval": "sim",
+                                            "is_item_search": True,
+                                            "current_issue": f"como obter {missing_item} em {result['game_name']}",
+                                        },
+                                    )
+                                else:  # "nao"
+                                    logger.info(f"[Backend] [UPDATE] Setando user_approval='nao'")
+                                    graph_app.update_state(
+                                        config,
+                                        {
+                                            "user_approval": "nao",
+                                        },
+                                    )
+                                
+                                logger.info(f"[Backend] [RETOMANDO] Continuando execução após HITL...")
+                                # Retoma o grafo
+                                result = graph_app.invoke(None, config=config)
+                                break
+                            else:
+                                logger.warning(f"[Backend] [TIPO DESCONHECIDO] {response_data.get('type')}")
+                                continue
+                    
+                    except WebSocketDisconnect:
+                        logger.warning(f"[Backend] [DESCONECTADO] Cliente desconectou durante HITL")
+                        await manager.disconnect(thread_id)
+                        return
+                    except Exception as e:
+                        logger.error(f"[Backend] [ERRO HITL] {e}", exc_info=True)
+                        await manager.send_event(thread_id, "error", {"message": f"Erro durante HITL: {str(e)}"})
+                        await manager.disconnect(thread_id)
+                        return
                 
                 if elapsed > max_execution_time:
                     logger.error(f"[Backend] ❌ TIMEOUT: Execução excedeu {max_execution_time}s")

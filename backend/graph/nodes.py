@@ -464,8 +464,9 @@ def verify_requirements_node(state: AgentState) -> Dict[str, Any]:
     Compara os required_requirements com o player_inventory do jogador.
 
     Se is_item_search=True: este nó NÃO deve ser chamado (o roteador pula).
+    Se inventário vazio: IGNORA e retorna missing_item = None (assume que tem tudo).
     Se inventário completo: missing_item = None.
-    Se falta algo: missing_item = nome do item mais crítico.
+    Se falta algo crítico: missing_item = nome do item mais crítico.
 
     Retorna: missing_item (str ou None).
     """
@@ -473,39 +474,49 @@ def verify_requirements_node(state: AgentState) -> Dict[str, Any]:
     _check_execution_limits("verify_requirements_node")
     
     print(f"\n{'='*80}")
-    print(f"✅ NÓ 3: VERIFY_REQUIREMENTS_NODE")
+    print(f"[NÓ 3] VERIFY_REQUIREMENTS_NODE")
     print(f"{'='*80}")
-    print(f"📥 INPUT DO NÓ:")
+    print(f"[INPUT]")
     print(f"   required_requirements: {state.get('required_requirements', [])}")
     print(f"   player_inventory: {state.get('player_inventory', [])}")
     print(f"   is_item_search: {state.get('is_item_search', False)}")
     
     # Salvaguarda — não deveria ser chamado na segunda passagem
     if state.get("is_item_search", False):
-        print(f"\n   ⚠️ is_item_search=True, pulando verificação")
-        print(f"\n📤 OUTPUT DO NÓ:")
+        print(f"\n   [AVISO] is_item_search=True, pulando verificação")
+        print(f"\n[OUTPUT]")
         print(f"   missing_item: None")
         print(f"{'='*80}\n")
         return {"missing_item": None}
 
     requirements = state.get("required_requirements", [])
+    inventory = state.get("player_inventory", [])
+
+    # FIX #1: Se inventário está vazio, IGNORA verificação
+    # (Assume que o jogador tem todos os itens necessários)
+    if not inventory or len(inventory) == 0:
+        print(f"\n   [OK] Inventário vazio - ASSUMINDO QUE JOGADOR TEM TODOS OS ITENS")
+        print(f"\n[OUTPUT]")
+        print(f"   missing_item: None")
+        print(f"{'='*80}\n")
+        return {"missing_item": None}
 
     # Se não há requisitos, não há nada faltando
     if not requirements:
-        print(f"\n   ℹ️ Nenhum requisito a verificar")
-        print(f"\n📤 OUTPUT DO NÓ:")
+        print(f"\n   [INFO] Nenhum requisito a verificar")
+        print(f"\n[OUTPUT]")
         print(f"   missing_item: None")
         print(f"{'='*80}\n")
         return {"missing_item": None}
 
     prompt = VERIFY_REQUIREMENTS_PROMPT.format(
         required_requirements=", ".join(requirements),
-        player_inventory=", ".join(state.get("player_inventory", [])),
+        player_inventory=", ".join(inventory),
     )
 
     try:
         content = _invoke_llm(prompt)
-        print(f"\n   📤 Resposta do LLM: {content}")
+        print(f"\n   [LLM] Resposta: {content}")
     except Exception as exc:
         logger.error("verify_requirements_node: falha na chamada ao LLM: %s", exc)
         raise APIConnectionError(f"Falha ao verificar requisitos. Detalhe: {exc}") from exc
@@ -519,7 +530,7 @@ def verify_requirements_node(state: AgentState) -> Dict[str, Any]:
         else missing_raw
     )
     
-    print(f"\n📤 OUTPUT DO NÓ:")
+    print(f"\n[OUTPUT]")
     print(f"   missing_item: {missing_item}")
     print(f"{'='*80}\n")
 
