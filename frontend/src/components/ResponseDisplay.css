@@ -27,7 +27,15 @@
   margin: 0;
 }
 
-.button-copy {
+.header-buttons {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.button-copy,
+.button-regenerate {
   background: rgba(46, 204, 113, 0.1);
   border: 1px solid #2ecc71;
   color: #2ecc71;
@@ -39,9 +47,16 @@
   white-space: nowrap;
 }
 
-.button-copy:hover {
+.button-copy:hover,
+.button-regenerate:hover {
   background: rgba(46, 204, 113, 0.2);
   transform: translateY(-2px);
+}
+
+.button-regenerate:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .response-content {

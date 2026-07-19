@@ -5,14 +5,47 @@ export default function ResponseDisplay({
   response,
   game,
   mission,
-  helpType
+  helpType,
+  threadId,
+  onRegenerate
 }) {
   const [copied, setCopied] = useState(false)
+  const [isRegenerating, setIsRegenerating] = useState(false)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(response)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleRegenerate = async () => {
+    setIsRegenerating(true)
+    try {
+      const res = await fetch('http://localhost:8000/api/regenerate-hint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ thread_id: threadId })
+      })
+      
+      if (!res.ok) {
+        throw new Error(`Erro: ${res.status}`)
+      }
+      
+      const data = await res.json()
+      console.log('[Frontend] Nova dica gerada:', data)
+      
+      // Chama callback para atualizar resposta
+      if (onRegenerate) {
+        onRegenerate(data.final_response || data.generated_text)
+      }
+    } catch (err) {
+      console.error('[Frontend] Erro ao regenerar:', err)
+      alert('Erro ao gerar nova dica. Tente novamente.')
+    } finally {
+      setIsRegenerating(false)
+    }
   }
 
   const title = helpType === 'hint'
@@ -59,13 +92,23 @@ export default function ResponseDisplay({
             {game} • {mission}
           </p>
         </div>
-        <button
-          onClick={handleCopy}
-          className="button-copy"
-          title="Copiar resposta"
-        >
-          {copied ? '✅ Copiado!' : '📋 Copiar'}
-        </button>
+        <div className="header-buttons">
+          <button
+            onClick={handleCopy}
+            className="button-copy"
+            title="Copiar resposta"
+          >
+            {copied ? '✅ Copiado!' : '📋 Copiar'}
+          </button>
+          <button
+            onClick={handleRegenerate}
+            disabled={isRegenerating}
+            className="button-regenerate"
+            title="Gerar nova dica com o mesmo problema"
+          >
+            {isRegenerating ? '⏳ Gerando...' : '🔄 Nova Dica'}
+          </button>
+        </div>
       </div>
 
       <div className="response-content">

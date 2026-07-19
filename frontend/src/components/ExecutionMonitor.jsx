@@ -20,11 +20,11 @@ export default function ExecutionMonitor({
 }) {
   const [nodeStatus, setNodeStatus] = useState({})
   const [response, setResponse] = useState(null)
+  const [events, setEvents] = useState([])
   const [error, setError] = useState(null)
   const [isComplete, setIsComplete] = useState(false)
   const [hitlData, setHitlData] = useState(null)
-  const [events, setEvents] = useState([])
-  const wsRef = useRef(null)
+  const wsRef = React.useRef(null)
 
   useEffect(() => {
     // Inicializa status dos nós
@@ -192,6 +192,8 @@ export default function ExecutionMonitor({
             game={executionData.game_name}
             mission={executionData.mission_name}
             helpType={executionData.help_type}
+            threadId={threadId}
+            onRegenerate={setResponse}
           />
         )}
 
