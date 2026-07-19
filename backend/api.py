@@ -17,6 +17,7 @@ import uvicorn
 
 from backend.main import validate_payload, build_initial_state
 from backend.graph.workflow import app as graph_app
+from backend.graph.nodes import reset_execution_counters
 from backend.errors import PayloadValidationError
 
 logging.basicConfig(
@@ -172,6 +173,10 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
             })
             await manager.disconnect(thread_id)
             return
+        
+        # RESET: Reseta contadores para esta nova execução
+        reset_execution_counters()
+        logger.info(f"[Backend] 🔄 Contadores de execução resetados para nova busca")
         
         # Envia confirmação de início
         await manager.send_event(thread_id, "execution_start", {

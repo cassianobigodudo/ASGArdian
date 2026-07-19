@@ -58,6 +58,13 @@ _max_node_executions = 5  # Máximo de vezes que um nó pode ser executado
 _total_execution_time_start = None
 _max_total_execution_time = 300  # 5 minutos máximo
 
+def reset_execution_counters():
+    """Reseta os contadores de execução para iniciar uma nova busca."""
+    global _node_execution_count, _total_execution_time_start
+    _node_execution_count = {}
+    _total_execution_time_start = None
+    print("[NODES] Contadores de execução resetados")
+
 def _check_execution_limits(node_name: str):
     """Verifica se atingiu limites de execução para evitar loops infinitos."""
     global _node_execution_count, _total_execution_time_start
