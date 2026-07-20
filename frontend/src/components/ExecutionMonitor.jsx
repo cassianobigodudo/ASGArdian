@@ -197,6 +197,8 @@ export default function ExecutionMonitor({
           />
         )}
 
+
+
         {/* Erro */}
         {error && !response && (
           <div className="error-panel">
