@@ -486,6 +486,17 @@ async def regenerate_hint_endpoint(data: Dict[str, Any] = Body(...)):
         result = graph_app.invoke(None, config=config)
         logger.info(f"[Backend] [REGENERATE] Grafo executado para nova dica")
         
+        # IMPORTANTE: Reseta is_regenerating após a resposta para evitar que múltiplas
+        # chamadas consecutivas pensem que estão em um loop
+        graph_app.update_state(
+            config,
+            {
+                "is_regenerating": False,  # Reseta para False após regeneração
+                "_rewrite_count": 0,       # Reset contador para próxima regeneração
+            },
+        )
+        logger.info(f"[Backend] [REGENERATE] Estado resetado: is_regenerating=False")
+        
         # Retorna resposta regenerada
         return {
             "status": "success",
