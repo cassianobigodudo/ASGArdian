@@ -2,6 +2,8 @@
 
 Você é um agente de desenvolvimento integrado à IDE. Suas operações Git devem seguir estritamente as regras de padronização e atomização abaixo para garantir a conformidade com a avaliação do projeto.
 
+Sempre commite com o usuário que está conectado com esse repositório
+
 ## 1. Padrão de Mensagem (Conventional Commits)
 Todas as suas mensagens de commit automáticas devem seguir rigorosamente o formato:
 `<tipo>(<escopo>): <descrição curta e direta em letras minúsculas>`

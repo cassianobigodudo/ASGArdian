@@ -32,26 +32,43 @@ O ASGArdian agora suporta múltiplos provedores de LLM:
 - **Fallback:** Usado automaticamente se `GROQ_API_KEY` não estiver configurada
 
 ## 3. Estrutura do Estado (`AgentState`)
-Definido via `TypedDict` para tráfego contínuo e persistência entre os nós do grafo.
+Definido via `TypedDict` para tráfego contínuo e persistência entre os nós do grafo. 14 campos trafegam continuamente entre todos os nós.
 
 ```python
 from typing import TypedDict, List, Optional
 
 class AgentState(TypedDict):
-    game_name: str
-    mission_name: str
-    current_issue: str
-    original_issue: str          # Preserva o problema original antes de qualquer redirecionamento
-    help_type: str                   # "hint" ou "answer"
-    player_inventory: List[str]
-    raw_search_result: str           # Conteúdo bruto retornado pelo LLM
-    required_requirements: List[str] # Itens obrigatórios identificados pela LLM
-    missing_item: Optional[str]      # Item que falta no inventário do jogador (se houver)
-    is_item_search: bool             # Flag que indica se o fluxo atual é uma busca pelo item faltante
-    user_approval: Optional[str]     # "sim", "nao" ou None (resposta do HITL)
-    generated_text: str              # Resposta temporária gerada
-    critique_passed: bool            # Status do filtro anti-spoiler
-    final_response: str              # Resposta final validada
+    # --- Dados de entrada do jogador (payload obrigatório) ---
+    game_name: str              # Nome do jogo (ex: "Borderlands 2")
+    mission_name: str           # Nome da missão ou localização atual
+    current_issue: str          # Problema atual — pode ser atualizado no fluxo HITL
+    original_issue: str         # Preserva o problema original antes do redirecionamento HITL
+    help_type: str              # "hint" (pista sutil) ou "answer" (solução direta)
+    player_inventory: List[str] # Itens ou habilidades que o jogador possui
+
+    # --- Análise do problema (novo nó: analyze_problem_node) ---
+    user_problem_text: str      # Texto completo do problema fornecido pelo usuário
+    analyzed_mission: str       # Missão/dúvida extraída da análise do problema
+    search_query: str           # Query otimizada para busca: "[game] [mission] guide walkthrough"
+
+    # --- Resultados intermediários do grafo ---
+    raw_search_result: str           # Conteúdo bruto retornado pelo IGN database/Groq/Gemini
+    required_requirements: List[str] # Pré-requisitos extraídos pelo process_guide_node
+    missing_item: Optional[str]      # Item ausente no inventário identificado pelo verify_node
+
+    # --- Controle de fluxo e HITL ---
+    is_item_search: bool         # RN05: True na 2ª passagem — ignora verify para evitar loop
+    user_approval: Optional[str] # Resposta HITL: "sim", "nao" ou None (aguardando)
+    is_regenerating: bool        # Flag para "Gerar Nova Dica" - pula diretamente para generate_help_node
+
+    # --- Resposta gerada e validada ---
+    generated_text: str   # Resposta temporária gerada pelo generate_help_node
+    critique_passed: bool # True se o critique_spoiler_node aprovou a resposta
+    final_response: str   # Resposta final validada e entregue ao jogador
+    hitl_question: str    # Pergunta HITL para o usuário
+    
+    # --- Proteção contra loops infinitos de reescrita ---
+    _rewrite_count: int   # Contador de tentativas de reescrita (máx indefinido até passar no critique)
 ```
 
 ## 4. Topologia do Grafo (LangGraph)
@@ -89,3 +106,37 @@ app = workflow.compile(
 ```
 
 > **Nota:** A lógica de interrupção é condicional — o HITL só deve pausar na segunda passagem por `fetch_guide_node`, quando `missing_item` foi identificado e `user_approval` ainda é `None`. Na primeira passagem, o nó executa normalmente.
+
+## 5. Proteção Contra Loops Infinitos
+
+### Implementação:
+O sistema possui múltiplas camadas de proteção contra loops em `nodes.py`:
+
+1. **Contador por Nó**: `_node_execution_count` rastreia quantas vezes cada nó foi executado
+   - Limite: máx 5 execuções por nó (configurável via `_max_node_executions`)
+   - Quando atingido: lança exceção `"LOOP DETECTADO"`
+
+2. **Tempo Total de Execução**: `_total_execution_time_start` marca o início da execução
+   - Limite: 300 segundos (5 minutos)
+   - Quando atingido: lança exceção `"TIMEOUT TOTAL"`
+
+3. **Flag `is_item_search`**: RN05 - evita re-verificação infinita
+   - Quando `True`: roteador pula `verify_requirements_node` e vai direto para `generate_help_node`
+   - Impede que a mesma busca refaça a verificação de requisitos
+
+4. **Função `reset_execution_counters()`**: Chamada no início de cada nova execução no `api.py`
+   - Reseta `_node_execution_count` e `_total_execution_time_start`
+   - Permite que múltiplas buscas sequenciais funcionem sem falsa detecção de loop
+
+### Fluxo de Reescrita (Critique Loop):
+O `critique_spoiler_node` pode reescrever a resposta indefinidamente:
+- Se `critique_passed=False`: retorna para `generate_help_node` para reescrita
+- Se `critique_passed=True`: encerra o fluxo no `END`
+- **Não há limite de reescritas** - o LLM continua refinando até passar na auditoria de spoilers
+
+### Regeneração de Dica (Feature "Gerar Nova Dica"):
+Quando o usuário clica no botão de regeneração:
+1. Frontend chama `POST /api/regenerate-hint` com `thread_id`
+2. Backend seta `is_regenerating=True` no estado
+3. Roteador (`route_after_process`) detecta flag e pula para `generate_help_node`
+4. Após geração, `is_regenerating` é resetado para `False` para evitar nova regeneração auto-disparada
