@@ -160,6 +160,9 @@ debug_*.py
 .coverage
 htmlcov/
 
+# Documentacao de Aprendizado (local only)
+docs/learning/
+
 # Arquivos Temporários
 *.tmp
 *.swp
