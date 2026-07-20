@@ -15,7 +15,63 @@ O ASGArdian recebe o contexto exato onde o jogador está travado e fornece **ape
 
 ---
 
-## 🏗️ Arquitetura do Agente
+## 🛠️ Arquitetura Detalhada
+
+### Agentes do Sistema (5 Nós do Grafo)
+
+1. **`fetch_guide_node`** (Busca de Detonados)
+   - Consulta `guides_database.json` (IGN direto)
+   - Fallback para Groq/Gemini se não encontrado
+   - Query padrão: `"{game_name} {mission_name} guide walkthrough"`
+   - Na 2ª passagem (HITL): `"como obter {missing_item} em {game_name}"`
+
+2. **`process_guide_node`** (Análise de Conteúdo)
+   - Extrai pré-requisitos críticos
+   - Identifica passos mecânicos
+   - Detecta spoilers narrativos futuros
+   - Popula `required_requirements` e `future_spoilers`
+
+3. **`verify_requirements_node`** (Validação de Inventário)
+   - Compara `required_requirements` com `player_inventory`
+   - Se inventário vazio: assume que jogador tem tudo
+   - **Pulado** quando `is_item_search=True` (evita loop infinito)
+   - Popula `missing_item` se algo crítico faltar
+
+4. **`generate_help_node`** (Geração de Resposta)
+   - Modo `hint`: dica sutil sem entregar a solução
+   - Modo `answer`: sequência direta e objetiva
+   - Incentiva uso de items críticos quando aplicável
+   - Pode ser reescrito indefinidamente pelo critique
+
+5. **`critique_spoiler_node`** (Auditoria Anti-Spoiler)
+   - Valida resposta contra `future_spoilers`
+   - Rejeita respostas com spoilers explícitos
+   - Sem limite de reescritas até passar na auditoria
+   - Garante `critique_passed=True` para encerrar
+
+### Fluxo de Controle HITL
+
+```
+Inventário Incompleto Detectado
+  │
+  ├─ is_item_search=False (1ª passagem)
+  │  ├─ user_approval="sim"  → atualiza current_issue + is_item_search=True → fetch_guide_node
+  │  └─ user_approval="nao"  → END (bloqueio)
+  │
+  └─ is_item_search=True (2ª passagem)
+     └─ Pula verify_requirements_node (por design)
+```
+
+### Proteção Contra Loops
+
+| Camada | Mecanismo | Limite |
+|---|---|---|
+| Por Nó | `_node_execution_count` | 5 execuções/nó |
+| Global | `_total_execution_time_start` | 300s (5min) |
+| HITL | `is_item_search` flag | Pula verify na 2ª passagem |
+| Reescrita | Critique loop | Indefinido até passar |
+
+---
 
 O coração da aplicação é um **StateGraph** do LangGraph com **5 nós** e roteamento condicional. Quando um item está faltando no inventário, o grafo reutiliza os mesmos nós de busca com um contexto atualizado — controlado pela flag `is_item_search` no estado para evitar loop infinito.
 
@@ -130,9 +186,26 @@ GOOGLE_API_KEY=sua_chave_do_gemini_aqui
 
 ## 🚀 Como Executar
 
+### Backend
+
 ```bash
-python backend/main.py
+python run.py
 ```
+
+O servidor estará disponível em **http://localhost:8000** com modo desenvolvimento ativado (reload automático).
+
+### Frontend (em outro terminal)
+
+```bash
+cd frontend
+npm run dev
+```
+
+O frontend estará disponível em **http://localhost:5173**
+
+### Ambos os servidores
+
+Abra dois terminais e execute os comandos acima simultaneamente.
 
 ---
 
@@ -215,9 +288,82 @@ O reuso dos nós de busca é controlado pela flag `is_item_search` no `AgentStat
 - `False` (padrão): fluxo normal, `verify_requirements_node` é executado
 - `True`: segunda passagem, `verify_requirements_node` é ignorado para evitar loop infinito
 
+### WebSocket em Tempo Real
+
+O frontend se conecta via WebSocket para receber eventos de execução:
+
+```javascript
+// Frontend se conecta
+ws = new WebSocket(`ws://localhost:8000/api/ws/${threadId}`);
+
+// Envia payload
+ws.send(JSON.stringify({ payload: {...} }));
+
+// Recebe eventos
+ws.onmessage = (event) => {
+  const { type, data } = JSON.parse(event.data);
+  
+  // Types: execution_start, node_started, node_completed, 
+  //        content_update, hitl_question, complete, error
+};
+
+// HITL: responde à pergunta
+ws.send(JSON.stringify({ type: 'hitl_response', approval: 'sim' }));
+```
+
 ---
 
-## 🔒 Regras Anti-Spoiler
+---
+
+## 🧪 Testando o Agente
+
+### 1. Teste via Frontend (Recomendado)
+1. Inicie backend: `python run.py`
+2. Inicie frontend: `cd frontend && npm run dev`
+3. Abra http://localhost:5174
+4. Preencha o formulário:
+   - **Jogo**: "Red Dead Redemption 2"
+   - **Missão**: "Outlaws from the West"
+   - **Problema**: "Dois caras em um cavalo me atacam depois que Abigail me salva do Mr. Milton. Como mato eles rápido?"
+   - **Tipo de Ajuda**: Hint ou Answer
+   - **Inventário**: deixe vazio (assume que tem tudo) ou adicione itens
+5. Observe os eventos em tempo real
+
+### 2. Teste via CLI (Python)
+```python
+from backend.main import run_agent
+
+payload = {
+    "game_name": "Red Dead Redemption 2",
+    "mission_name": "Outlaws from the West",
+    "current_issue": "Dois caras em um cavalo me atacam. Como mato eles?",
+    "help_type": "hint",
+    "player_inventory": []  # Vazio = assume que tem tudo
+}
+
+response = run_agent(payload)
+print(response)
+```
+
+### 3. Teste via HTTP POST
+```bash
+curl -X POST http://localhost:8000/api/run-agent \
+  -H "Content-Type: application/json" \
+  -d '{
+    "game_name": "Borderlands 2",
+    "mission_name": "Lights Out",
+    "current_issue": "Não consigo restaurar a energia",
+    "help_type": "answer",
+    "player_inventory": ["Shotgun"]
+  }'
+```
+
+Você receberá um `thread_id` para se conectar via WebSocket:
+```bash
+ws://localhost:8000/api/ws/{thread_id}
+```
+
+---
 
 Toda resposta passa por um nó de crítica independente (`critique_spoiler_node`) que garante:
 
