@@ -9,6 +9,7 @@ Permite que os agentes procurem por jogo + missão e obtenham o link e conteúdo
 import json
 import requests
 import logging
+from difflib import SequenceMatcher
 from bs4 import BeautifulSoup
 from typing import Optional, Dict, Tuple
 from pathlib import Path
@@ -29,7 +30,9 @@ class GuidesLoader:
         """Carrega o banco de dados JSON com links de guias."""
         try:
             with open(GUIDES_DB_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                db = json.load(f)
+                logger.info(f"[GUIDES LOADER] Banco de dados carregado de: {GUIDES_DB_PATH}")
+                return db
         except FileNotFoundError:
             logger.warning(f"Guides database not found at {GUIDES_DB_PATH}")
             return {"guides": []}
@@ -37,9 +40,21 @@ class GuidesLoader:
             logger.error(f"Invalid JSON in {GUIDES_DB_PATH}")
             return {"guides": []}
     
+    def reload_guides_db(self):
+        """Recarrega o banco de dados do arquivo JSON (útil para atualizações dinâmicas)."""
+        logger.info(f"[GUIDES LOADER] Recarregando banco de dados...")
+        self.guides_db = self._load_guides_db()
+        logger.info(f"[GUIDES LOADER] Banco recarregado com {len(self.guides_db.get('guides', []))} jogos")
+    
     def find_guide_url(self, game_name: str, mission_name: str) -> Optional[str]:
         """
-        Procura um guia pelo nome do jogo e missão.
+        Procura um guia pelo nome do jogo e missão com fuzzy matching.
+        
+        Usa SequenceMatcher para encontrar correspondências mesmo com variações
+        de escrita (espaços, caracteres especiais, etc).
+        
+        IMPORTANTE: Recarrega o banco de dados do arquivo ANTES de buscar,
+        para garantir que sempre lê a versão mais recente.
         
         Args:
             game_name: Nome do jogo (ex: "GTA 5", "Grand Theft Auto V")
@@ -48,32 +63,58 @@ class GuidesLoader:
         Returns:
             URL do guia na IGN ou None se não encontrado
         """
+        # Recarrega banco antes de cada busca (garante leitura de arquivo atualizado)
+        self.reload_guides_db()
+        
         print(f"\n[GUIDES LOADER] Procurando: {game_name} - {mission_name}")
         
-        game_name_lower = game_name.lower()
-        mission_name_lower = mission_name.lower()
+        game_name_lower = game_name.lower().strip()
+        mission_name_lower = mission_name.lower().strip()
+        
+        GAME_THRESHOLD = 0.6  # 60% de similaridade mínima para jogos
+        MISSION_THRESHOLD = 0.65  # 65% de similaridade mínima para missões
         
         for game in self.guides_db.get("guides", []):
-            # Verifica se o jogo corresponde (nome ou aliases)
-            if (game["game"].lower() == game_name_lower or 
-                any(alias.lower() == game_name_lower for alias in game.get("game_aliases", []))):
+            # Verifica jogo por nome exato ou fuzzy
+            game_names = [game["game"].lower()] + [alias.lower() for alias in game.get("game_aliases", [])]
+            
+            best_game_score = 0
+            for gname in game_names:
+                similarity = SequenceMatcher(None, game_name_lower, gname).ratio()
+                if similarity > best_game_score:
+                    best_game_score = similarity
+            
+            # Se encontrou jogo com boa similaridade, procura missão
+            if best_game_score >= GAME_THRESHOLD:
+                print(f"  [OK] Jogo encontrado (score: {best_game_score:.1%}): {game['game']}")
                 
-                print(f"  [OK] Jogo encontrado: {game['game']}")
+                best_mission_match = None
+                best_mission_score = 0
                 
-                # Procura pela missão
                 for mission in game.get("missions", []):
-                    if (mission["name"].lower() == mission_name_lower or
-                        any(alias.lower() == mission_name_lower for alias in mission.get("mission_aliases", []))):
+                    mission_names = [mission["name"].lower()] + [alias.lower() for alias in mission.get("mission_aliases", [])]
+                    
+                    for mname in mission_names:
+                        similarity = SequenceMatcher(None, mission_name_lower, mname).ratio()
                         
-                        url = mission.get("url")
-                        print(f"  [OK] Missão encontrada: {mission['name']}")
-                        print(f"  [OK] URL: {url}")
-                        return url
+                        if similarity > best_mission_score:
+                            best_mission_score = similarity
+                            best_mission_match = mission
                 
-                print(f"  [ERRO] Missão não encontrada: {mission_name}")
+                if best_mission_score >= MISSION_THRESHOLD:
+                    url = best_mission_match.get("url")
+                    print(f"  [OK] Missão encontrada (score: {best_mission_score:.1%}): {best_mission_match['name']}")
+                    print(f"  [OK] URL: {url}")
+                    return url
+                else:
+                    print(f"  [AVISO] Nenhuma missão com score >= {MISSION_THRESHOLD:.0%}")
+                    if best_mission_match:
+                        print(f"         Melhor match: '{best_mission_match['name']}' (score: {best_mission_score:.1%})")
+                
+                # Saiu do loop de jogos após encontrar o jogo correto
                 return None
         
-        print(f"  [ERRO] Jogo não encontrado: {game_name}")
+        print(f"  [ERRO] Jogo não encontrado")
         return None
     
     def extract_ign_guide(self, url: str) -> Optional[str]:
@@ -84,7 +125,7 @@ class GuidesLoader:
         1. Faz requisição ao URL
         2. Procura pelo div.content (conteúdo real do guia)
         3. Remove navegação, scripts e styles
-        4. Retorna o texto limpo
+        4. Retorna o texto completo SEM LIMITE de caracteres
         
         Args:
             url: URL do guia na IGN
@@ -120,26 +161,34 @@ class GuidesLoader:
             if content_div:
                 text = content_div.get_text(separator='\n', strip=True)
                 print(f"  [OK] Conteúdo extraído via div.content: {len(text)} chars")
-                return text[:3000]  # Limita a 3000 caracteres
+                print(f"  [INFO] Primeiros 500 chars:\n{text[:500]}")
+                print(f"  [INFO] Últimos 500 chars:\n{text[-500:]}")
+                return text  # SEM LIMITE
             
             # Estratégia 2: Fallback para main
             main = soup.find('main')
             if main:
                 text = main.get_text(separator='\n', strip=True)
                 print(f"  [OK] Conteúdo extraído via main: {len(text)} chars")
-                return text[:3000]
+                print(f"  [INFO] Primeiros 500 chars:\n{text[:500]}")
+                print(f"  [INFO] Últimos 500 chars:\n{text[-500:]}")
+                return text  # SEM LIMITE
             
             # Estratégia 3: Fallback para article
             article = soup.find('article')
             if article:
                 text = article.get_text(separator='\n', strip=True)
                 print(f"  [OK] Conteúdo extraído via article: {len(text)} chars")
-                return text[:3000]
+                print(f"  [INFO] Primeiros 500 chars:\n{text[:500]}")
+                print(f"  [INFO] Últimos 500 chars:\n{text[-500:]}")
+                return text  # SEM LIMITE
             
             # Estratégia 4: Último recurso - todo o texto
             text = soup.get_text(separator='\n', strip=True)
             print(f"  [AVISO] Conteúdo extraído via fallback (todo texto): {len(text)} chars")
-            return text[:3000]
+            print(f"  [INFO] Primeiros 500 chars:\n{text[:500]}")
+            print(f"  [INFO] Últimos 500 chars:\n{text[-500:]}")
+            return text  # SEM LIMITE
             
         except requests.exceptions.RequestException as e:
             print(f"  [ERRO] Erro de requisição: {e}")

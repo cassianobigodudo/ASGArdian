@@ -408,6 +408,25 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
                 
                 await asyncio.sleep(0.2)  # Pequeno delay para não sobrecarregar
                 
+                # Envia conteúdo intermediário se disponível
+                if node_name == "fetch_guide_node" and result.get("raw_search_result"):
+                    await manager.send_event(thread_id, "content_update", {
+                        "node": node_name,
+                        "content": result.get("raw_search_result")[:1000]  # Primeiros 1000 chars
+                    })
+                
+                elif node_name == "process_guide_node" and result.get("required_requirements"):
+                    await manager.send_event(thread_id, "content_update", {
+                        "node": node_name,
+                        "requirements": result.get("required_requirements")
+                    })
+                
+                elif node_name == "generate_help_node" and result.get("generated_text"):
+                    await manager.send_event(thread_id, "content_update", {
+                        "node": node_name,
+                        "generated_response": result.get("generated_text")
+                    })
+                
                 await manager.send_event(thread_id, "node_completed", {
                     "node": node_name,
                     "status": "success"

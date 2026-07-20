@@ -311,10 +311,17 @@ def fetch_guide_node(state: AgentState) -> Dict[str, Any]:
     if guide_result:
         url, content = guide_result
         print(f"\n   [OK] Guia encontrado na IGN!")
+        print(f"   Conteudo extraído: {len(content)} chars")
+        
+        # MOSTRA TODO O CONTEÚDO PARA DEBUG
+        print(f"\n{'='*80}")
+        print(f"📄 CONTEÚDO COMPLETO EXTRAÍDO:")
+        print(f"{'='*80}")
+        print(content)
+        print(f"{'='*80}\n")
         
         # Formata resultado com fontes
         raw_result = f"{content}\n\n---FONTES---\n1. IGN Walkthrough\n   Link: {url}"
-        print(f"   Conteudo: {len(content)} chars")
     else:
         print(f"\n   [AVISO] Guia nao encontrado no banco de dados, usando LLM fallback...")
     
@@ -576,22 +583,12 @@ def generate_help_node(state: AgentState) -> Dict[str, Any]:
     
     if state.get("critique_passed") is False:
         rewrite_count += 1
-        if rewrite_count >= 2:
-            # Máximo 2 tentativas, aceita e segue
-            print(f"\n   ⚠️ LIMITE DE REESCRITA ATINGIDO (2 tentativas)")
-            print(f"   Aceitando resposta como está")
-            # Marca como passou para não voltar mais
-            return {
-                "generated_text": guide_steps,
-                "critique_passed": True,
-                "_rewrite_count": rewrite_count,
-            }
         
         critique_feedback = (
             "\n⚠️ ATENCAO — A resposta anterior foi REPROVADA por conter spoilers. "
             "Reescreva completamente sem mencionar eventos futuros do enredo."
         )
-        print(f"\n   🔄 MODO REESCRITA ({rewrite_count}/2): Aplicando feedback do critique")
+        print(f"\n   🔄 MODO REESCRITA (tentativa {rewrite_count}): Aplicando feedback do critique")
 
     template = (
         GENERATE_HINT_PROMPT if state["help_type"] == "hint"
@@ -602,6 +599,7 @@ def generate_help_node(state: AgentState) -> Dict[str, Any]:
         game_name=state["game_name"],
         current_issue=state["current_issue"],
         guide_steps=guide_steps,
+        required_requirements=", ".join(state.get("required_requirements", [])) or "nenhum",
         critique_feedback=critique_feedback,
     )
 
