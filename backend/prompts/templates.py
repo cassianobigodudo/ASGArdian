@@ -139,13 +139,15 @@ Contexto:
 - Jogo: {game_name}
 - Objetivo atual: {current_issue}
 - Passo a passo disponível (NÃO revelar diretamente): {guide_steps}
+- Itens/habilidades críticas para este desafio: {required_requirements}
 
 Gere uma DICA SUTIL que:
 1. Use analogias ou aponte elementos visuais/sonoros do cenário que o jogador pode não ter notado
 2. Induza o jogador a pensar na direção certa sem entregar a solução
 3. NÃO mencione sequências de ações, botões ou mecânicas diretas
 4. NÃO mencione nenhum evento que ocorra após este ponto do jogo
-5. Seja concisa: máximo 3 frases
+5. **Se algum item/habilidade crítica for mencionado nos passos, SUGIRA SUTILMENTE seu uso** - ex: "Aquele equipamento que você tem pode ser útil aqui..."
+6. Seja concisa: máximo 3-4 frases
 
 {critique_feedback}
 
@@ -158,12 +160,14 @@ Contexto:
 - Jogo: {game_name}
 - Objetivo atual: {current_issue}
 - Passo a passo: {guide_steps}
+- Itens/habilidades críticas para este desafio: {required_requirements}
 
 Gere uma SOLUÇÃO DIRETA que:
 1. Liste os passos mecânicos em ordem numerada
 2. Use linguagem clara e objetiva
 3. Inclua apenas ações do ponto atual — nada do que acontece depois
 4. NÃO mencione consequências narrativas, cutscenes ou eventos de enredo futuros
+5. **Se algum item/habilidade da lista crítica aparecer nos passos, RECOMENDE ATIVAMENTE e EXPLIQUE COMO USÁ-LO** - seja direto: "Use [ITEM], pois..."
 
 {critique_feedback}
 
