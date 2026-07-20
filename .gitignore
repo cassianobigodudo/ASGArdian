@@ -150,3 +150,19 @@ __pycache__/
 
 # Configurações e Chaves Sensíveis
 .env
+
+# Arquivos de Teste e Debug
+test_*.py
+debug_*.py
+*_test.py
+*.test.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Arquivos Temporários
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
